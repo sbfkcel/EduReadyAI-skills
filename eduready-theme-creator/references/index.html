@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>限时特惠</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="badge">限时特惠 · 不容错过</div>
+    <h1 id="hero-title">加载中...</h1>
+    <p class="subtitle" id="hero-subtitle"></p>
+    <div class="countdown" id="countdown" style="display:none">
+      <div class="countdown-item">
+        <div class="num" id="cd-days">00</div>
+        <div class="label">天</div>
+      </div>
+      <div class="countdown-item">
+        <div class="num" id="cd-hours">00</div>
+        <div class="label">时</div>
+      </div>
+      <div class="countdown-item">
+        <div class="num" id="cd-mins">00</div>
+        <div class="label">分</div>
+      </div>
+      <div class="countdown-item">
+        <div class="num" id="cd-secs">00</div>
+        <div class="label">秒</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Products -->
+  <div class="products">
+    <div class="container">
+      <h2>精选课程</h2>
+      <div class="product-grid" id="product-grid">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rules -->
+  <div class="rules" id="rules-section" style="display:none">
+    <div class="container">
+      <div class="rules-box">
+        <h2>活动规则</h2>
+        <div class="content" id="rules-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">Powered by EduReady AI</div>
+
+  <!-- SDK -->
+  <script>
+    document.write('<script src="' + (
+      (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+        ? 'https://eduready.ai'
+        : ''
+    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=2"><\/script>');
+  </script>
+  <script>
+    // 从 URL 读取参数
+    var urlParams = new URLSearchParams(window.location.search);
+    var campaignId = urlParams.get('campaign');
+    var campaignSlug = urlParams.get('campaignSlug');
+    var templateSlug = urlParams.get('template');
+    var refCode = urlParams.get('ref');
+
+    // 检测开发模式（从父页面 URL 读取 dev 参数）
+    var devMode = false;
+    var devBuyBase = '';
+    try {
+      var parentUrl = window.parent.location.href;
+      var pp = new URLSearchParams(new URL(parentUrl).search);
+      var devParam = pp.get('dev');
+      if (devParam) {
+        devMode = true;
+        var devUrl = new URL(devParam);
+        devBuyBase = devUrl.origin + devUrl.pathname.replace(/[^/]*$/, 'buy.html');
+        if (!campaignId) campaignId = pp.get('campaign');
+        if (!campaignSlug) campaignSlug = pp.get('campaignSlug');
+        if (!templateSlug) templateSlug = pp.get('template');
+        if (!refCode) refCode = pp.get('ref');
+      }
+    } catch (e) {}
+
+    // 构建购买页 URL（使用 SDK 自动携带 campaign、template、ref 参数）
+    var BASE_URL = (location.hostname === '127.0.0.1' || location.hostname === 'localhost') ? 'https://eduready.ai' : '';
+
+    function buildBuyUrl(productId) {
+      if (devMode) {
+        var qs = [];
+        if (campaignSlug) qs.push('campaign=' + campaignSlug);
+        if (templateSlug) qs.push('template=' + templateSlug);
+        if (refCode) qs.push('ref=' + refCode);
+        qs.push('dev=' + encodeURIComponent(devBuyBase));
+        return BASE_URL + '/buy/' + productId + '?' + qs.join('&');
+      }
+      return EduReady.getBuyUrl(productId, {
+        campaignSlug: campaignSlug,
+        template: templateSlug,
+        ref: refCode
+      });
+    }
+
+    // 在顶层窗口跳转到购买页
+    function goToBuy(url) {
+      var win = window;
+      try {
+        while (win !== win.parent) {
+          win = win.parent;
+        }
+      } catch (e) {}
+      win.location.href = url;
+    }
+
+    // 货币格式化（活动 API 返回的价格已是元/美元单位，不是分）
+    function formatPrice(amount, currency) {
+      var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
+      var sym = symbols[currency] || currency || '¥';
+      return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    // 渲染活动数据
+    function renderCampaign(data) {
+      var campaign = data.campaign;
+      var products = data.products;
+      var config = data.config || {};
+      var isActive = data.isActive;
+
+      // Hero
+      document.getElementById('hero-title').textContent = config.title || campaign.name;
+      if (config.subtitle) {
+        document.getElementById('hero-subtitle').textContent = config.subtitle;
+      }
+
+      // 背景
+      if (config.bgType === 'image' && config.bgImage) {
+        document.querySelector('.hero').style.backgroundImage = 'url(' + config.bgImage + ')';
+        document.querySelector('.hero').style.backgroundSize = 'cover';
+        document.querySelector('.hero').style.backgroundPosition = 'center';
+      } else if (config.bgValue) {
+        document.querySelector('.hero').style.background = config.bgValue;
+      }
+
+      // 倒计时
+      if (campaign.endTime && isActive) {
+        var countdownEl = document.getElementById('countdown');
+        countdownEl.style.display = 'flex';
+        var endTime = new Date(campaign.endTime);
+        function pad(n) { return n < 10 ? '0' + n : '' + n; }
+        function updateCountdown() {
+          var diff = endTime - new Date();
+          if (diff <= 0) return;
+          document.getElementById('cd-days').textContent = pad(Math.floor(diff / 86400000));
+          document.getElementById('cd-hours').textContent = pad(Math.floor((diff % 86400000) / 3600000));
+          document.getElementById('cd-mins').textContent = pad(Math.floor((diff % 3600000) / 60000));
+          document.getElementById('cd-secs').textContent = pad(Math.floor((diff % 60000) / 1000));
+        }
+        updateCountdown();
+        setInterval(updateCountdown, 1000);
+      }
+
+      // 产品列表
+      var grid = document.getElementById('product-grid');
+      grid.innerHTML = '';
+      if (!products || products.length === 0) {
+        grid.innerHTML = '<p style="text-align:center;color:#999">暂无产品</p>';
+        return;
+      }
+      products.forEach(function(p) {
+        var buyUrl = buildBuyUrl(p.id);
+        var card = document.createElement('div');
+        card.className = 'product-card';
+        var imgHtml = p.coverUrl ? '<img src="' + p.coverUrl + '" alt="' + p.name + '">' : '';
+        var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
+        var origHtml = (p.basePrice !== p.discountPrice) ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>' : '';
+        var btnHtml;
+        if (p.soldOut) {
+          btnHtml = '<button class="btn btn-primary" disabled>已售罄</button>';
+        } else if (isActive) {
+          // 使用 onclick 在顶层窗口跳转，避免在 iframe 中打开
+          btnHtml = '<a href="javascript:void(0)" onclick="goToBuy(\'' + buyUrl.replace(/'/g, "\\'") + '\')" class="btn btn-primary">' + (config.buttonText || '立即抢购') + '</a>';
+        } else {
+          btnHtml = '<button class="btn btn-primary" disabled>' + (data.isPaused ? '已暂停' : '已结束') + '</button>';
+        }
+        card.innerHTML = imgHtml +
+          '<div class="info">' +
+            '<div class="name">' + p.name + '</div>' +
+            (p.description ? '<div class="desc">' + p.description + '</div>' : '') +
+            '<div class="price-row">' +
+              '<span class="price-current">' + priceHtml + '</span>' +
+              origHtml +
+            '</div>' +
+            btnHtml +
+          '</div>';
+        grid.appendChild(card);
+      });
+
+      // 活动规则
+      if (config.rules) {
+        document.getElementById('rules-section').style.display = 'block';
+        document.getElementById('rules-content').textContent = config.rules;
+      }
+
+      // 通知父页面调整 iframe 高度
+      try {
+        window.parent.postMessage({ type: 'eduready:campaign:resize', height: document.body.scrollHeight }, '*');
+      } catch (e) {}
+    }
+
+    // 向父页面请求数据
+    function requestData() {
+      window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
+    }
+
+    // 监听父页面数据响应
+    window.addEventListener('message', function(e) {
+      if (e.data?.type === 'eduready:campaign:data') {
+        renderCampaign(e.data.payload);
+      }
+    });
+
+    // 请求数据
+    requestData();
+  </script>
+</body>
+</html>

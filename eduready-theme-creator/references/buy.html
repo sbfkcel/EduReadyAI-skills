@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>购买课程</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .step { display: none; }
+    .step.active { display: block; }
+  </style>
+</head>
+<body>
+  <div class="buy-page">
+    <div class="buy-card">
+
+      <!-- Steps sidebar (动态生成) -->
+      <div class="steps" id="steps"></div>
+
+      <!-- Step containers (动态生成) -->
+      <div class="step-content" id="step-container" style="flex:1;min-width:0"></div>
+
+    </div>
+  </div>
+
+  <!-- SDK -->
+  <script>
+    // 自动检测环境：本地开发用生产服务器 SDK，线上用相对路径
+    document.write('<script src="' + (
+      (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+        ? 'https://eduready.ai'
+        : ''
+    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=2"><\/script>');
+  </script>
+  <script>
+    var productData = null;
+    var currentStep = 1;
+    var totalSteps = 1;
+    var couponInfo = null;
+    var allTemplates = []; // 存储所有模板信息
+    var previousSubmissions = {}; // 历史提交数据
+
+    // 货币格式化
+    function formatPrice(amount, currency) {
+      var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
+      var sym = symbols[currency] || currency || '¥';
+      return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    // Init
+    EduReady.ready(function(data) {
+      productData = data;
+      window._edureadyData = data;
+      var cur = data.product.currency || 'USD';
+
+      // 保存历史提交数据
+      previousSubmissions = data.previousSubmissions || {};
+
+      // 收集所有模板
+      var allGroups = (data.formGroups || []).concat(data.postPayFormGroups || []);
+      allGroups.forEach(function(group) {
+        (group.templates || []).forEach(function(tpl) {
+          allTemplates.push({
+            groupId: group.productFormGroupId || group.groupId || group.id,
+            groupSubmitTiming: group.submitTiming || 'pre_pay',
+            template: tpl
+          });
+        });
+      });
+
+      // 步骤总数 = 1(产品) + N(模板) + 1(支付)
+      totalSteps = 1 + allTemplates.length + 1;
+
+      // 渲染步骤指示器
+      renderStepIndicators(data);
+
+      // 渲染所有步骤页面
+      renderAllSteps(data);
+
+      // 显示第一步
+      goStep(1);
+
+      // Auto resize
+      EduReady.resize(document.body.scrollHeight);
+    });
+
+    // 渲染步骤指示器
+    function renderStepIndicators(data) {
+      var stepsEl = document.getElementById('steps');
+      stepsEl.innerHTML = '';
+
+      // Step 1: 选择课程
+      stepsEl.appendChild(createStepIndicator(1, '选择课程'));
+
+      // Steps 2-N: 每个模板
+      allTemplates.forEach(function(item, i) {
+        stepsEl.appendChild(createStepConnector());
+        stepsEl.appendChild(createStepIndicator(i + 2, item.template.name || '信息 ' + (i + 1)));
+      });
+
+      // Last step: 确认支付
+      stepsEl.appendChild(createStepConnector());
+      stepsEl.appendChild(createStepIndicator(totalSteps, '确认支付'));
+    }
+
+    function createStepIndicator(stepNum, label) {
+      var div = document.createElement('div');
+      div.className = 'step-indicator' + (stepNum === 1 ? ' active' : '');
+      div.dataset.step = stepNum;
+      div.innerHTML = '<div class="dot">' + stepNum + '</div><span>' + label + '</span>';
+      div.onclick = function() { goStep(stepNum); };
+      return div;
+    }
+
+    function createStepConnector() {
+      var div = document.createElement('div');
+      div.className = 'step-connector';
+      return div;
+    }
+
+    // 渲染所有步骤
+    function renderAllSteps(data) {
+      var container = document.getElementById('step-container');
+      container.innerHTML = '';
+      var cur = data.product.currency || 'USD';
+
+      // Step 1: 产品信息
+      var step1 = document.createElement('div');
+      step1.id = 'step1';
+      step1.className = 'step active';
+      step1.innerHTML = '<div class="form-card">'
+        + '<div class="buy-header">'
+        +   '<h1>' + (data.product.name || '') + '</h1>'
+        +   '<div>'
+        +     '<span class="price">' + formatPrice(data.pricing.finalPrice, cur) + '</span>'
+        +     (data.pricing.originalPrice !== data.pricing.finalPrice
+          ? '<span class="price-original">' + formatPrice(data.pricing.originalPrice, cur) + '</span>'
+          : '')
+        +   '</div>'
+        + '</div>'
+        + (data.product.stages && data.product.stages.length > 0
+          ? '<div class="stages"><h3>课程阶段</h3>' + renderStages(data.product.stages) + '</div>'
+          : '')
+        + (data.refUser
+          ? '<div class="ref-user"><div class="avatar">' + ((data.refUser.displayName || '?')[0]) + '</div>'
+          + '<div class="name">推荐人: ' + data.refUser.displayName + '</div></div>'
+          : '')
+        + '<div class="form-nav">'
+        +   '<button class="btn btn-primary" onclick="goStep(2)">下一步</button>'
+        + '</div>'
+        + '</div>';
+      container.appendChild(step1);
+
+      // Steps 2-N: 表单模板
+      allTemplates.forEach(function(item, i) {
+        var stepNum = i + 2;
+        var step = document.createElement('div');
+        step.id = 'step' + stepNum;
+        step.className = 'step';
+
+        var html = '<div class="form-card">';
+        html += '<h2>' + (item.template.name || '信息') + '</h2>';
+        if (item.template.description) {
+          html += '<p class="step-desc">' + item.template.description + '</p>';
+        }
+        html += '<div class="form-fields">';
+
+        (item.template.fields || []).forEach(function(field) {
+          html += renderFormField(field, item.template.id, item.groupId, item.groupSubmitTiming);
+        });
+
+        html += '</div>';
+        html += '<div class="form-nav">';
+        html += '<button class="btn btn-outline" onclick="goStep(' + (stepNum - 1) + ')">上一步</button>';
+        html += '<button class="btn btn-primary" onclick="goStep(' + (stepNum + 1) + ')">下一步</button>';
+        html += '</div>';
+        html += '</div>';
+
+        step.innerHTML = html;
+        container.appendChild(step);
+      });
+
+      // Last step: 支付
+      var payStep = document.createElement('div');
+      payStep.id = 'step' + totalSteps;
+      payStep.className = 'step';
+      payStep.innerHTML = '<div class="form-card">'
+        + '<h2>确认购买</h2>'
+        + '<div class="form-group">'
+        +   '<label>邮箱 <span class="required">*</span></label>'
+        +   '<input type="email" id="email" placeholder="用于接收课程信息和收据">'
+        +   '<div class="hint">支付完成后课程信息将发送到此邮箱</div>'
+        + '</div>'
+        + '<div class="form-group">'
+        +   '<label>优惠券</label>'
+        +   '<div class="coupon-row">'
+        +     '<input type="text" id="coupon" placeholder="输入优惠券码">'
+        +     '<button class="btn-sm" onclick="verifyCoupon()">验证</button>'
+        +   '</div>'
+        +   '<div id="coupon-msg"></div>'
+        + '</div>'
+        + '<div class="summary">'
+        +   '<div class="summary-row"><span>课程原价</span><span id="sum-original">' + formatPrice(data.pricing.originalPrice, cur) + '</span></div>'
+        +   '<div class="summary-row" id="sum-discount-row" style="display:none"><span>优惠减免</span><span id="sum-discount" style="color:#27ae60">--</span></div>'
+        +   '<div class="summary-row total"><span>应付金额</span><span class="value" id="sum-total">' + formatPrice(data.pricing.finalPrice, cur) + '</span></div>'
+        + '</div>'
+        + '<div id="pay-error" class="error-box" style="display:none"></div>'
+        + '<div class="form-nav">'
+        +   '<button class="btn btn-outline" onclick="goStep(' + (totalSteps - 1) + ')">上一步</button>'
+        +   '<button class="btn btn-primary" id="pay-btn" onclick="pay()">立即支付</button>'
+        + '</div>'
+        + '</div>';
+      container.appendChild(payStep);
+
+      // 预填邮箱（登录用户）
+      if (data.userEmail) {
+        setTimeout(function() {
+          var emailInput = document.getElementById('email');
+          if (emailInput) emailInput.value = data.userEmail;
+        }, 100);
+      }
+
+      // 预填优惠券
+      if (data.coupon) {
+        setTimeout(function() {
+          var couponInput = document.getElementById('coupon');
+          if (couponInput) couponInput.value = data.coupon.code;
+          couponInfo = data.coupon;
+          showCouponSuccess(data.coupon);
+        }, 100);
+      }
+    }
+
+    function renderStages(stages) {
+      var html = '<div id="stages-list">';
+      stages.forEach(function(s, i) {
+        html += '<div class="stage-item">'
+          + '<div class="num">' + (i + 1) + '</div>'
+          + '<span>' + s.name + '</span>'
+          + (s.intervalDays ? '<span class="days">' + s.intervalDays + ' 天</span>' : '')
+          + '</div>';
+      });
+      return html + '</div>';
+    }
+
+    function renderFormField(field, templateId, groupId, submitTiming) {
+      var fieldType = field.fieldType || field.type;
+      var html = '<div class="form-group">';
+      html += '<label>' + field.label;
+      if (field.isRequired) html += ' <span class="required">*</span>';
+      html += '</label>';
+
+      var reqAttr = field.isRequired ? ' data-required="true"' : '';
+
+      // 从历史提交中获取默认值
+      var defaultValue = '';
+      var prevData = previousSubmissions[templateId];
+      if (prevData && prevData.length > 0 && prevData[0].data) {
+        defaultValue = prevData[0].data[field.fieldKey] || '';
+      }
+
+      if (fieldType === 'select' && field.options) {
+        html += '<select data-field-key="' + field.fieldKey + '" data-template-id="' + templateId
+          + '" data-group-id="' + groupId + '" data-submit-timing="' + submitTiming + '"' + reqAttr + '>';
+        html += '<option value="">请选择</option>';
+        (Array.isArray(field.options) ? field.options : []).forEach(function(opt) {
+          var optVal = opt.value || opt;
+          var selected = defaultValue == optVal ? ' selected' : '';
+          html += '<option value="' + optVal + '"' + selected + '>' + (opt.label || opt) + '</option>';
+        });
+        html += '</select>';
+      } else if (fieldType === 'multiselect' && field.options) {
+        html += '<div class="checkbox-group" data-field-key="' + field.fieldKey + '" data-template-id="' + templateId
+          + '" data-group-id="' + groupId + '" data-submit-timing="' + submitTiming + '"' + reqAttr + '>';
+        var selectedValues = Array.isArray(defaultValue) ? defaultValue : [];
+        (Array.isArray(field.options) ? field.options : []).forEach(function(opt) {
+          var optVal = opt.value || opt;
+          var checked = selectedValues.includes(optVal) ? ' checked' : '';
+          html += '<label class="checkbox-item">'
+            + '<input type="checkbox" value="' + optVal + '"' + checked + '>'
+            + ' ' + (opt.label || opt)
+            + '</label>';
+        });
+        html += '</div>';
+      } else if (fieldType === 'textarea') {
+        html += '<textarea rows="3" data-field-key="' + field.fieldKey + '" data-template-id="' + templateId
+          + '" data-group-id="' + groupId + '" data-submit-timing="' + submitTiming + '"'
+          + (field.placeholder ? ' placeholder="' + field.placeholder + '"' : '')
+          + reqAttr
+          + '>' + (defaultValue || '') + '</textarea>';
+      } else {
+        html += '<input type="' + (fieldType || 'text') + '" data-field-key="' + field.fieldKey
+          + '" data-template-id="' + templateId + '" data-group-id="' + groupId
+          + '" data-submit-timing="' + submitTiming + '"'
+          + (defaultValue ? ' value="' + defaultValue + '"' : '')
+          + (field.placeholder ? ' placeholder="' + field.placeholder + '"' : '')
+          + reqAttr
+          + '>';
+      }
+
+      if (field.hint) {
+        html += '<div class="hint">' + field.hint + '</div>';
+      }
+      html += '</div>';
+      return html;
+    }
+
+    // 验证当前步骤的必填字段
+    function validateStep(stepNum) {
+      var stepEl = document.getElementById('step' + stepNum);
+      if (!stepEl) return true;
+
+      // 清除之前的错误提示
+      stepEl.querySelectorAll('.field-error').forEach(function(el) { el.remove(); });
+      stepEl.querySelectorAll('.has-error').forEach(function(el) { el.classList.remove('has-error'); });
+
+      var valid = true;
+      var fields = stepEl.querySelectorAll('[data-field-key]');
+
+      fields.forEach(function(el) {
+        var isRequired = el.dataset.required === 'true';
+        if (!isRequired) return;
+
+        var value;
+        if (el.classList.contains('checkbox-group')) {
+          var checked = el.querySelectorAll('input[type="checkbox"]:checked');
+          value = checked.length > 0 ? 'has-value' : '';
+        } else {
+          value = el.value ? el.value.trim() : '';
+        }
+
+        if (!value) {
+          valid = false;
+          var group = el.closest('.form-group');
+          if (group) {
+            group.classList.add('has-error');
+            var errDiv = document.createElement('div');
+            errDiv.className = 'field-error';
+            errDiv.textContent = '此项为必填';
+            group.appendChild(errDiv);
+          }
+        }
+      });
+
+      return valid;
+    }
+
+    // 步骤切换
+    function goStep(n) {
+      if (n < 1 || n > totalSteps) return;
+
+      // 向前切换时验证当前步骤
+      if (n > currentStep && !validateStep(currentStep)) {
+        return;
+      }
+
+      currentStep = n;
+
+      // 切换步骤内容
+      document.querySelectorAll('.step').forEach(function(el) { el.classList.remove('active'); });
+      var stepEl = document.getElementById('step' + n);
+      if (stepEl) stepEl.classList.add('active');
+
+      // 更新步骤指示器
+      document.querySelectorAll('.step-indicator').forEach(function(el) {
+        var s = parseInt(el.dataset.step);
+        el.classList.remove('active', 'done');
+        if (s === n) el.classList.add('active');
+        else if (s < n) el.classList.add('done');
+      });
+
+      EduReady.stepChange(n, totalSteps);
+      setTimeout(function() { EduReady.resize(document.body.scrollHeight); }, 50);
+    }
+
+    // 优惠券
+    function showCouponSuccess(coupon) {
+      var msg = document.getElementById('coupon-msg');
+      if (!msg) return;
+      var cur = productData.product.currency || 'USD';
+      msg.className = 'coupon-success';
+      msg.textContent = '优惠券已生效，减免 ' + formatPrice(coupon.discountAmount, cur);
+
+      var orig = productData.pricing.originalPrice;
+      var final_ = orig - coupon.discountAmount;
+      var discountRow = document.getElementById('sum-discount-row');
+      if (discountRow) discountRow.style.display = 'flex';
+      var discountEl = document.getElementById('sum-discount');
+      if (discountEl) discountEl.textContent = '-' + formatPrice(coupon.discountAmount, cur);
+      var totalEl = document.getElementById('sum-total');
+      if (totalEl) totalEl.textContent = formatPrice(final_, cur);
+    }
+
+    async function verifyCoupon() {
+      var code = document.getElementById('coupon').value.trim();
+      if (!code) return;
+      var msg = document.getElementById('coupon-msg');
+
+      try {
+        var result = await EduReady.verifyCoupon(code, productData.product.id);
+        couponInfo = result;
+        showCouponSuccess(result);
+      } catch (e) {
+        msg.className = 'coupon-error';
+        msg.textContent = e.message || '优惠券无效';
+        couponInfo = null;
+      }
+    }
+
+    // 收集表单数据
+    function collectFormSubmissions() {
+      var grouped = {};
+
+      document.querySelectorAll('[data-field-key]').forEach(function(el) {
+        var key = el.dataset.groupId + '_' + el.dataset.templateId;
+        if (!grouped[key]) {
+          grouped[key] = {
+            productFormGroupId: parseInt(el.dataset.groupId),
+            templateId: parseInt(el.dataset.templateId),
+            submitTiming: el.dataset.submitTiming,
+            data: {}
+          };
+        }
+
+        var value;
+        if (el.classList.contains('checkbox-group')) {
+          var checked = [];
+          el.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) {
+            checked.push(cb.value);
+          });
+          value = checked.length > 0 ? checked : '';
+        } else {
+          value = el.value ? el.value.trim() : '';
+        }
+        if (value) {
+          grouped[key].data[el.dataset.fieldKey] = value;
+        }
+      });
+
+      // 只返回有数据的表单组
+      return Object.values(grouped).filter(function(g) {
+        return Object.keys(g.data).length > 0;
+      });
+    }
+
+    // 支付
+    async function pay() {
+      var email = document.getElementById('email').value.trim();
+      if (!email) {
+        document.getElementById('email').focus();
+        return;
+      }
+
+      var btn = document.getElementById('pay-btn');
+      btn.disabled = true;
+      btn.textContent = '处理中...';
+      document.getElementById('pay-error').style.display = 'none';
+
+      var submissions = collectFormSubmissions();
+
+      try {
+        var result = await EduReady.checkout({
+          email: email,
+          couponCode: couponInfo ? (couponInfo.code || document.getElementById('coupon').value) : undefined,
+          formSubmissions: submissions
+        });
+        // 跳转到 Stripe 支付页面 - 向上遍历找到最顶层窗口
+        var win = window;
+        try {
+          while (win !== win.parent) {
+            win = win.parent;
+          }
+        } catch (e) {
+          // 跨域限制，使用当前能访问的最高层
+        }
+        win.location.href = result.url;
+      } catch (e) {
+        var errEl = document.getElementById('pay-error');
+        errEl.style.display = 'block';
+        errEl.textContent = e.message || '支付失败，请稍后重试';
+        btn.disabled = false;
+        btn.textContent = '立即支付';
+      }
+    }
+  </script>
+</body>
+</html>
