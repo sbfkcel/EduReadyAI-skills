@@ -123,7 +123,7 @@
     // 货币格式化（活动 API 返回的价格已是元/美元单位，不是分）
     function formatPrice(amount, currency) {
       var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
-      var sym = symbols[currency] || currency || '¥';
+      var sym = symbols[currency] || currency;
       return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
@@ -178,7 +178,7 @@
         var buyUrl = buildBuyUrl(p.id);
         var card = document.createElement('div');
         card.className = 'product-card';
-        var imgHtml = p.coverUrl ? '<img src="' + p.coverUrl + '" alt="' + p.name + '">' : '';
+        var imgHtml = p.coverUrl ? '<img src="' + p.coverUrl + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">' : '';
         var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
         var origHtml = (p.basePrice !== p.discountPrice) ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>' : '';
         var btnHtml;

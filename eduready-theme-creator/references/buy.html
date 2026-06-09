@@ -43,7 +43,7 @@
     // 货币格式化
     function formatPrice(amount, currency) {
       var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
-      var sym = symbols[currency] || currency || '¥';
+      var sym = symbols[currency] || currency;
       return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
@@ -51,7 +51,7 @@
     EduReady.ready(function(data) {
       productData = data;
       window._edureadyData = data;
-      var cur = data.product.currency || 'USD';
+      var cur = data.product.currency;
 
       // 保存历史提交数据
       previousSubmissions = data.previousSubmissions || {};
@@ -122,7 +122,7 @@
     function renderAllSteps(data) {
       var container = document.getElementById('step-container');
       container.innerHTML = '';
-      var cur = data.product.currency || 'USD';
+      var cur = data.product.currency;
 
       // Step 1: 产品信息
       var step1 = document.createElement('div');
