@@ -259,10 +259,9 @@ function renderProducts(products, isActive, config) {
     var card = document.createElement('div');
     card.className = 'product-card';
 
-    // coverUrl 可能为空，建议准备默认占位图
-    var imgHtml = p.coverUrl
-      ? '<img src="' + p.coverUrl + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">'
-      : '<div style="aspect-ratio:16/9;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:14px;">' + p.name + '</div>';
+    // coverUrl 可能为空，平台提供默认封面图 /cover.jpg
+    var imgSrc = p.coverUrl || '/cover.jpg';
+    var imgHtml = '<img src="' + imgSrc + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">';
     var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
     var origHtml = (p.basePrice !== p.discountPrice)
       ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>'
