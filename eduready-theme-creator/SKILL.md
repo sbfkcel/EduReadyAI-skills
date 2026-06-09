@@ -99,7 +99,7 @@ Read the guide for complete details. Use the example files as templates when cre
     id: 1,
     name: '课程名称',
     description: '课程描述',
-    coverUrl: 'https://...',  // 产品封面图，平台存储比例为 16:9
+    coverUrl: 'https://...',  // 产品封面图，比例 16:9；可能为空（未上传时）
     basePrice: 9999,
     discountPrice: 7999,
     currency: 'CNY',  // 平台系统配置的默认货币

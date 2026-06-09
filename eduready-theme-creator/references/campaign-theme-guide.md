@@ -144,7 +144,7 @@ window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
       id: 1,
       name: '课程名称',
       description: '课程描述',
-      coverUrl: 'https://...',   // 产品封面图，平台存储比例为 16:9
+      coverUrl: 'https://...',   // 产品封面图，平台存储比例为 16:9；可能为空（未上传时）
       basePrice: 9999,
       discountPrice: 7999,
       currency: 'CNY',
@@ -259,7 +259,10 @@ function renderProducts(products, isActive, config) {
     var card = document.createElement('div');
     card.className = 'product-card';
 
-    var imgHtml = p.coverUrl ? '<img src="' + p.coverUrl + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">' : '';
+    // coverUrl 可能为空，建议准备默认占位图
+    var imgHtml = p.coverUrl
+      ? '<img src="' + p.coverUrl + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">'
+      : '<div style="aspect-ratio:16/9;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:14px;">' + p.name + '</div>';
     var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
     var origHtml = (p.basePrice !== p.discountPrice)
       ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>'
