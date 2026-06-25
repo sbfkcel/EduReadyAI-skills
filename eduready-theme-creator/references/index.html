@@ -6,13 +6,20 @@
   <title>限时特惠</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="campaign-bg">
+
+  <!-- Floating orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+
+  <div class="campaign-content">
 
   <!-- Hero -->
   <div class="hero">
-    <div class="badge">限时特惠 · 不容错过</div>
     <h1 id="hero-title">加载中...</h1>
     <p class="subtitle" id="hero-subtitle"></p>
+    <p class="hero-desc" id="hero-desc"></p>
     <div class="countdown" id="countdown" style="display:none">
       <div class="countdown-item">
         <div class="num" id="cd-days">00</div>
@@ -56,13 +63,15 @@
   <!-- Footer -->
   <div class="footer">Powered by EduReady AI</div>
 
+  </div><!-- /.campaign-content -->
+
   <!-- SDK -->
   <script>
     document.write('<script src="' + (
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=3"><\/script>');
+    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=5"><\/script>');
   </script>
   <script>
     // 从 URL 读取参数
@@ -115,8 +124,16 @@
       });
     }
 
-    // 在顶层窗口跳转到购买页
+    // 跳转到购买页：请求父页面在其 SPA 内软导航（router.push），
+    // 避免顶层窗口硬跳转——硬跳转会导致浏览器后退时活动页卡在“加载中…”。
     function goToBuy(url) {
+      try {
+        if (window.parent !== window) {
+          window.parent.postMessage({ type: 'eduready:campaign:navigate', url: url }, '*');
+          return;
+        }
+      } catch (e) {}
+      // 兜底：非 iframe 或 postMessage 失败时，顶层窗口硬跳转
       var win = window;
       try {
         while (win !== win.parent) {
@@ -144,6 +161,9 @@
       document.getElementById('hero-title').textContent = config.title || campaign.name;
       if (config.subtitle) {
         document.getElementById('hero-subtitle').textContent = config.subtitle;
+      }
+      if (config.description) {
+        document.getElementById('hero-desc').textContent = config.description;
       }
 
       // 背景
@@ -222,20 +242,31 @@
       } catch (e) {}
     }
 
-    // 向父页面请求数据
+    // 向父页面请求数据；父页面监听器可能尚未就绪（首次渲染数据未到，
+    // 或后退/bfcache 恢复后 iframe 先于父页面初始化），因此重试直到收到数据。
+    var _gotData = false;
+    var _reqTries = 0;
     function requestData() {
-      window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
+      if (_gotData) return;
+      try { window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*'); } catch (e) {}
+      if (++_reqTries < 40) { setTimeout(requestData, 300); } // 最多约 12s
     }
 
     // 监听父页面数据响应
     window.addEventListener('message', function(e) {
       if (e.data?.type === 'eduready:campaign:data') {
+        _gotData = true;
         renderCampaign(e.data.payload);
       }
     });
 
     // 请求数据
     requestData();
+
+    // 后退/前进 bfcache 恢复时重新请求
+    window.addEventListener('pageshow', function(e) {
+      if (e.persisted && !_gotData) { _reqTries = 0; requestData(); }
+    });
   </script>
 </body>
 </html>

@@ -30,7 +30,7 @@ This skill bundles reference files in the `references/` directory:
 
 - **`references/campaign-theme-guide.md`** — Complete development guide
   - Sections 4.1-4.7: Campaign page development
-  - Sections 5.1-5.10: Buy page development
+  - Sections 5.1-5.12: Buy page development (5.12 = reusing campaign common info)
   - Section 6: SDK API reference
   - Section 8: CSS styling reference
 
@@ -66,18 +66,34 @@ Read the guide for complete details. Use the example files as templates when cre
     ) + '/api/campaign-files/sdk/eduready-campaign.js?v=3"><\/script>');
   </script>
   <script>
-    // Request data from parent page
-    window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
+    var _gotData = false, _reqTries = 0;
+
+    // Request data from parent. The parent listener may not be ready yet (first
+    // render data not in, or iframe re-inits before parent on back/bfcache restore),
+    // so RETRY until data arrives — a one-shot request gets stuck on "加载中…".
+    function requestData() {
+      if (_gotData) return;
+      try { window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*'); } catch (e) {}
+      if (++_reqTries < 40) setTimeout(requestData, 300); // ~12s cap
+    }
 
     // Listen for response
     window.addEventListener('message', function(e) {
       if (e.data?.type === 'eduready:campaign:data') {
+        _gotData = true;
         var campaign = e.data.payload.campaign;
         var products = e.data.payload.products;
         var config = e.data.payload.config || {};
         var isActive = e.data.payload.isActive;
         // Render your page here
       }
+    });
+
+    requestData();
+
+    // Re-request on back/forward bfcache restore
+    window.addEventListener('pageshow', function(e) {
+      if (e.persisted && !_gotData) { _reqTries = 0; requestData(); }
     });
   </script>
 </body>
@@ -141,6 +157,15 @@ function buildBuyUrl(productId) {
 }
 
 function goToBuy(url) {
+  // 请求父页面在其 SPA 内软导航（router.push），避免顶层硬跳转——
+  // 硬跳转会让浏览器后退回活动页时卡在“加载中…”（父页面 effect 不再执行）。
+  try {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'eduready:campaign:navigate', url: url }, '*');
+      return;
+    }
+  } catch (e) {}
+  // 兜底：非 iframe 或 postMessage 失败时，顶层窗口硬跳转
   var win = window;
   try { while (win !== win.parent) { win = win.parent; } } catch (e) {}
   win.location.href = url;
@@ -202,8 +227,12 @@ has `coverUrl` on the buy flow too — don't leave checkout without a product vi
   </script>
   <script>
     EduReady.ready(function(data) {
-      // data.product, data.pricing, data.formGroups, data.postPayFormGroups
-      // data.refUser, data.coupon, data.previousSubmissions, data.userEmail
+      // Product & checkout:
+      //   data.product, data.pricing, data.formGroups, data.postPayFormGroups
+      //   data.refUser, data.coupon, data.previousSubmissions, data.userEmail
+      // Campaign common info (same source as the campaign home page — see below):
+      //   data.campaign, data.campaignProducts,
+      //   data.campaignIsActive, data.campaignIsPaused, data.campaignSlug
       // Build your step wizard here
     });
   </script>
@@ -221,6 +250,38 @@ has `coverUrl` on the buy flow too — don't leave checkout without a product vi
 | `EduReady.stepChange(step, total)` | Notify step change |
 | `EduReady.resize(height)` | Adjust iframe height |
 | `EduReady.redirectToLogin()` | Redirect to platform login (call when buying while logged out) |
+
+### Campaign Common Info (on the buy page)
+
+When the buy URL carries `?campaign={id|slug}` (it does when reached by clicking buy on a campaign page), `EduReady.ready(data)` also delivers the **same campaign info the campaign home page has** — so `buy.html` can render the campaign theme/subtitle, description, countdown, rules, and a cross-sell grid of other campaign products, without any extra request.
+
+| Field | Description |
+|-------|-------------|
+| `data.campaign` | Campaign object (`null` if no campaign context). Key fields: `name`, `slug`, `status`, `endTime`, `pageConfig.{title, subtitle, description, rules, buttonText}` |
+| `data.campaignProducts` | Other products in the campaign — `{publicId, name, basePrice, discountPrice, coverUrl, currency, soldOut}` for a "more courses" grid |
+| `data.campaignIsActive` | Campaign is `active` (discounts apply) |
+| `data.campaignIsPaused` | Campaign is paused — show a notice and disable checkout |
+| `data.campaignSlug` | Slug for building other products' buy links |
+
+```javascript
+EduReady.ready(function(data) {
+  var c = data.campaign;
+  if (data.campaignIsPaused) showPausedBanner();        // disable checkout
+  if (c) {
+    var pc = c.pageConfig || {};
+    if (pc.title)    setHeroTitle(pc.title);            // theme / 主题
+    if (pc.subtitle) setHeroSubtitle(pc.subtitle);      // 副标题
+    if (pc.rules)    renderRules(pc.rules);             // 活动规则
+    if (c.endTime)   startCountdown(new Date(c.endTime).getTime());  // 倒计时
+  }
+  (data.campaignProducts || []).forEach(function (p) {  // 活动更多产品
+    var url = '/buy/' + p.publicId + '?campaign=' + (c ? (c.slug || c.id) : '');
+    renderCrossSellCard(p, url, p.soldOut);
+  });
+});
+```
+
+Rules: use `data.campaign.endTime` for the countdown (don't hardcode); cross-sell links **must** keep `?campaign=` so the discount/context survives; use each product's own `currency`. See guide §5.12 for full field shapes.
 
 ### Form Field Types
 

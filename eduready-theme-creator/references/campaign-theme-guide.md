@@ -378,6 +378,7 @@ try {
 
 ```javascript
 EduReady.ready(function(data) {
+  // —— 产品与结账 ——
   // data.product           — 产品信息
   // data.pricing           — 价格信息
   // data.formGroups        — 预付表单组
@@ -386,8 +387,17 @@ EduReady.ready(function(data) {
   // data.coupon            — 优惠券
   // data.previousSubmissions — 历史提交数据（已登录用户）
   // data.userEmail         — 当前用户邮箱（已登录用户）
+
+  // —— 活动通用信息（与活动首页同源，详见 5.3 / 5.12）——
+  // data.campaign          — 当前活动（标题/副标题/说明/规则/起止时间等），无活动时为 null
+  // data.campaignProducts  — 同活动下的其它产品（用于交叉推荐 / “更多课程”）
+  // data.campaignIsActive  — 活动是否处于 active 状态
+  // data.campaignIsPaused  — 活动是否被暂停（应展示提示且禁止下单）
+  // data.campaignSlug      — 活动 slug（构建其它产品购买链接时用）
 });
 ```
+
+> **购买页也能拿到活动通用信息。** 通过 `EduReady.ready(data)` 收到的同一份数据里就带了 `data.campaign`、`data.campaignProducts` 等字段，购买页可以像活动首页（`index.html`）一样渲染活动主题、副标题、活动说明、倒计时、活动规则、活动更多产品——无需再发额外请求。详见 **5.12 在购买页复用活动通用信息**。
 
 ### 5.3 数据结构详解
 
@@ -825,6 +835,101 @@ function createStepConnector() {
   return div;
 }
 ```
+
+---
+
+### 5.12 在购买页复用活动通用信息
+
+购买页（`buy.html`）的 `EduReady.ready(data)` 回调拿到的同一份 `data` 里，已经包含与活动首页（`index.html`）**同源**的活动通用信息。这意味着购买页可以渲染活动主题、副标题、活动说明、倒计时、活动规则，以及“活动更多产品”交叉推荐——全部来自首次初始化数据，无需额外请求。
+
+> 仅当购买链接带了 `?campaign={id|slug}`（从活动页点击购买时会自动带上）时，这些字段才有值；直接打开产品购买页（无活动上下文）时 `data.campaign` 为 `null`，应优雅降级为普通产品购买页。
+
+#### data.campaign（活动信息）
+
+```javascript
+{
+  id: 1,
+  name: '春季招生季',
+  slug: 'spring-2026',
+  type: 'flash_sale',
+  status: 'active',              // draft | active | paused | ended
+  startTime: '2026-03-01T00:00:00.000Z',
+  endTime: '2026-03-31T23:59:59.000Z',   // 倒计时用
+  pageConfig: {                  // 运营在后台配置的活动展示内容
+    title: '活动主标题',
+    subtitle: '活动副标题',
+    description: '活动说明文案',
+    rules: '活动规则文本（多行）',
+    buttonText: '立即抢购'
+    // ……运营自定义字段
+  },
+  metadata: { /* 活动元数据 */ },
+  defaultTemplateId: 3
+}
+```
+
+#### data.campaignProducts（活动内其它产品）
+
+```javascript
+[
+  {
+    id: 12,
+    publicId: '38e54a5b-…',       // 构建购买链接用
+    name: '同活动的另一门课',
+    description: '简介',
+    basePrice: 9999,
+    discountPrice: 7999,          // 活动折后价
+    discountType: 'percentage',   // percentage | fixed | special_price
+    discountValue: 0.8,
+    coverUrl: 'https://…',
+    productType: 'course',
+    currency: 'CNY',
+    maxQuantity: 100,
+    currentQuantity: 30,
+    soldOut: false                // 已售罄（达到限量）
+  }
+]
+```
+
+#### 用法示例
+
+```javascript
+EduReady.ready(function(data) {
+  var c = data.campaign;
+
+  // 1. 活动暂停提示：暂停时应禁止下单
+  if (data.campaignIsPaused) {
+    showPausedBanner();           // 展示“活动暂停中”提示
+  }
+
+  // 2. 活动主题 / 副标题 / 说明
+  if (c) {
+    var pc = c.pageConfig || {};
+    if (pc.title)       setHeroTitle(pc.title);
+    if (pc.subtitle)    setHeroSubtitle(pc.subtitle);
+    if (pc.description) setHeroDesc(pc.description);
+
+    // 3. 活动规则
+    if (pc.rules) renderRules(pc.rules);
+
+    // 4. 倒计时（用活动结束时间）
+    if (c.endTime) startCountdown(new Date(c.endTime).getTime());
+  }
+
+  // 5. “活动更多课程”交叉推荐：链接需带回活动上下文
+  (data.campaignProducts || []).forEach(function (p) {
+    var url = '/buy/' + p.publicId + '?campaign=' + (c ? (c.slug || c.id) : '');
+    renderCrossSellCard(p, url, p.soldOut);
+  });
+});
+```
+
+要点：
+
+- **倒计时**统一用 `data.campaign.endTime`（活动结束时间），与活动首页一致；不要硬编码。
+- **交叉推荐链接**必须带 `?campaign={slug|id}`，否则跳转到的产品购买页会丢失活动折扣与活动上下文。
+- **货币**用每个产品自带的 `currency`（见 4.6），不要硬编码货币符号。
+- **暂停 / 结束**：`data.campaignIsPaused` 为真时展示提示并禁用结账；`data.campaignIsActive` 为假（如已结束）时，活动折扣不再生效，应按原价或降级处理。
 
 ---
 
