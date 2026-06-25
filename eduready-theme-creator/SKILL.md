@@ -147,6 +147,27 @@ function goToBuy(url) {
 }
 ```
 
+### Cover Image Handling
+
+`product.coverUrl` is stored at 16:9 and **may be empty** (not uploaded). Always resolve it
+through a helper so empty covers fall back to the platform default and relative paths get the
+`BASE_URL` prefix — using a bare `/cover.jpg` breaks in local dev (it resolves to `127.0.0.1`).
+
+```javascript
+// 为空→平台默认图 /cover.jpg；绝对 URL 原样；相对路径补 BASE_URL
+function resolveCoverUrl(url) {
+  if (!url) return BASE_URL + '/cover.jpg';
+  if (/^https?:\/\//.test(url)) return url;
+  return BASE_URL + url;
+}
+
+// var imgHtml = '<img src="' + resolveCoverUrl(p.coverUrl) +
+//   '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%">';
+```
+
+Show the cover on both the **campaign product grid** and the **buy page Step 1** (the product
+has `coverUrl` on the buy flow too — don't leave checkout without a product visual).
+
 ## Buy Page (buy.html)
 
 ### Required Structure
@@ -199,6 +220,7 @@ function goToBuy(url) {
 | `EduReady.checkout({email, couponCode?, formSubmissions?})` | `{url, sessionId, orderId}` |
 | `EduReady.stepChange(step, total)` | Notify step change |
 | `EduReady.resize(height)` | Adjust iframe height |
+| `EduReady.redirectToLogin()` | Redirect to platform login (call when buying while logged out) |
 
 ### Form Field Types
 
@@ -220,11 +242,46 @@ Every form element must include these attributes for data collection:
 'data-submit-timing="' + submitTiming + '"'  // 'pre_pay' | 'post_pay'
 ```
 
+### Login Gating
+
+The buy flow requires the user to be logged in before filling forms or paying. Follow these rules:
+
+- **Do NOT redirect to login on page load.** Step 1 (product info) must be visible to everyone so they can browse. Only gate from the first form step onward — unless the requirement explicitly asks for "login on entry".
+- **Login signal is `data.userEmail`** (only set for logged-in users). When rendering a form step or the pay step, swap the content for a login prompt if `data.userEmail` is missing.
+- **Safety net:** in `pay()`, re-check the email and call `redirectToLogin()` if it's empty.
+
+```javascript
+// Redirect to login: prefer the SDK, fall back to platform /login with a return URL
+function redirectToLogin() {
+  if (window.EduReady && window.EduReady.redirectToLogin) {
+    window.EduReady.redirectToLogin();
+    return;
+  }
+  var returnUrl = window.location.pathname + window.location.search;
+  window.location.href = BASE_URL + '/login?redirect=' + encodeURIComponent(returnUrl);
+}
+
+function renderLoginPrompt() {
+  return '<div style="text-align:center;padding:40px 20px">'
+    + '<h2>请先登录</h2><p>登录后即可填写信息并提交购买</p>'
+    + '<button class="btn btn-primary" onclick="redirectToLogin()">登录</button></div>';
+}
+
+// When rendering a form/pay step:
+//   var inner = data.userEmail ? renderFormFields(...) : renderLoginPrompt();
+```
+
 ### Payment Flow
 
 ```javascript
 async function pay() {
-  var email = document.getElementById('email').value.trim();
+  // Login safety net: gate before checkout instead of letting it fail server-side
+  var email = productData.userEmail || document.getElementById('email').value.trim();
+  if (!email) {
+    redirectToLogin();
+    return;
+  }
+
   var submissions = collectFormSubmissions();
 
   var result = await EduReady.checkout({

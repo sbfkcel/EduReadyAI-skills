@@ -40,6 +40,17 @@
     var allTemplates = []; // 存储所有模板信息
     var previousSubmissions = {}; // 历史提交数据
 
+    // 本地开发用生产服务器，线上用相对路径（redirectToLogin 回退 / 封面图兜底都依赖它）
+    var BASE_URL = (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
+      ? 'https://eduready.ai' : '';
+
+    // 解析封面图：为空→平台默认图 /cover.jpg；绝对 URL 原样；相对路径补 BASE_URL
+    function resolveCoverUrl(url) {
+      if (!url) return BASE_URL + '/cover.jpg';
+      if (/^https?:\/\//.test(url)) return url;
+      return BASE_URL + url;
+    }
+
     // 货币格式化
     function formatPrice(amount, currency) {
       var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
@@ -47,6 +58,7 @@
       return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
+    // 跳转登录：优先用 SDK，回退到平台 /login（携带当前页作为回跳地址）
     function redirectToLogin() {
       if (window.EduReady && window.EduReady.redirectToLogin) {
         window.EduReady.redirectToLogin();
@@ -95,20 +107,8 @@
       EduReady.resize(document.body.scrollHeight);
     });
 
-    // 渲染登录提示
-    function renderLoginPrompt() {
-      var container = document.getElementById('step-container');
-      var stepsEl = document.getElementById('steps');
-      if (stepsEl) stepsEl.innerHTML = '';
-      container.innerHTML = '<div class="form-card" style="text-align:center;padding:60px 20px">'
-        + '<h2>请先登录</h2>'
-        + '<p class="step-desc">登录后即可填写信息并提交购买</p>'
-        + '<button class="btn btn-primary" onclick="redirectToLogin()">登录</button>'
-        + '</div>';
-      EduReady.resize(document.body.scrollHeight);
-    }
-
-    function renderStepLoginPromptZSJ() {
+    // 渲染步骤内的登录提示（未登录时替代表单/支付内容）
+    function renderStepLoginPrompt() {
       return '<div style="text-align:center;padding:40px 20px">'
         + '<h2>请先登录</h2>'
         + '<p class="step-desc">登录后即可填写信息并提交购买</p>'
@@ -162,6 +162,8 @@
       step1.className = 'step active';
       step1.innerHTML = '<div class="form-card">'
         + '<div class="buy-header">'
+        +   '<img class="buy-cover" src="' + resolveCoverUrl(data.product.coverUrl) + '" alt="' + (data.product.name || '') + '"'
+        +     ' style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:12px;margin-bottom:16px">'
         +   '<h1>' + (data.product.name || '') + '</h1>'
         +   '<div>'
         +     '<span class="price">' + formatPrice(data.pricing.finalPrice, cur) + '</span>'
@@ -208,7 +210,7 @@
           html += '<button class="btn btn-primary" onclick="goStep(' + (stepNum + 1) + ')">下一步</button>';
           html += '</div>';
         } else {
-          html += renderStepLoginPromptZSJ();
+          html += renderStepLoginPrompt();
         }
         html += '</div>';
 
@@ -225,9 +227,8 @@
       if (data.userEmail) {
         payHtml += '<div class="form-group">'
           +   '<label>邮箱 <span class="required">*</span></label>'
-          +   '<input type="email" id="email" value="' + (data.userEmail || '') + '" disabled'
-          +   (data.userEmail ? '' : ' placeholder="请先登录后自动获取邮箱"') + '>'
-          +   '<div class="hint">' + (data.userEmail ? '邮箱来自当前登录账户，将用于接收课程信息和收据' : '请先登录，支付前需要获取您的邮箱地址') + '</div>'
+          +   '<input type="email" id="email" value="' + (data.userEmail || '') + '" disabled>'
+          +   '<div class="hint">邮箱来自当前登录账户，将用于接收课程信息和收据</div>'
           + '</div>'
           + '<div class="form-group">'
           +   '<label>优惠券</label>'
@@ -248,7 +249,7 @@
           +   '<button class="btn btn-primary" id="pay-btn" onclick="pay()">立即支付</button>'
           + '</div>';
       } else {
-        payHtml += renderStepLoginPromptZSJ();
+        payHtml += renderStepLoginPrompt();
       }
       payHtml += '</div>';
       payStep.innerHTML = payHtml;

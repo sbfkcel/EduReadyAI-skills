@@ -246,6 +246,14 @@ if (campaign.endTime && isActive) {
 ### 4.5 产品列表渲染
 
 ```javascript
+// 解析封面图：为空→平台默认图 /cover.jpg；绝对 URL 原样；相对路径补 BASE_URL
+// 注意：务必用 BASE_URL 前缀，否则本地调试时 /cover.jpg 会指向 127.0.0.1 而裂图
+function resolveCoverUrl(url) {
+  if (!url) return BASE_URL + '/cover.jpg';
+  if (/^https?:\/\//.test(url)) return url;
+  return BASE_URL + url;
+}
+
 function renderProducts(products, isActive, config) {
   var grid = document.getElementById('product-grid');
   grid.innerHTML = '';
@@ -260,8 +268,8 @@ function renderProducts(products, isActive, config) {
     var card = document.createElement('div');
     card.className = 'product-card';
 
-    // coverUrl 可能为空，平台提供默认封面图 /cover.jpg
-    var imgSrc = p.coverUrl || '/cover.jpg';
+    // coverUrl 可能为空，resolveCoverUrl 会回退到平台默认图 /cover.jpg
+    var imgSrc = resolveCoverUrl(p.coverUrl);
     var imgHtml = '<img src="' + imgSrc + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">';
     var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
     var origHtml = (p.basePrice !== p.discountPrice)
@@ -705,13 +713,47 @@ function showCouponSuccess(coupon) {
 }
 ```
 
-### 5.9 支付提交
+### 5.9 登录门控（重要）
+
+购买流程需要登录后才能填写表单与支付。门控原则：
+
+- **不要一进购买页就跳登录**。Step 1（产品信息）应对所有访客可见，便于浏览。
+- **登录门控放在「进入表单步骤之前」**：从第一个表单步骤起，未登录时用登录提示替代表单内容；支付步骤同理。除非需求特别指定「访问即登录」，否则不要在 `EduReady.ready` 里直接跳转。
+- 登录信号是 `data.userEmail`（已登录用户才有值）。
+- 兜底：`pay()` 提交前再判一次，无 email 则 `redirectToLogin()`。
+
+```javascript
+// 跳转登录：优先用 SDK，回退到平台 /login（携带当前页作为回跳地址）
+function redirectToLogin() {
+  if (window.EduReady && window.EduReady.redirectToLogin) {
+    window.EduReady.redirectToLogin();
+    return;
+  }
+  var returnUrl = window.location.pathname + window.location.search;
+  window.location.href = BASE_URL + '/login?redirect=' + encodeURIComponent(returnUrl);
+}
+
+// 未登录时，用它替代表单/支付步骤的内容
+function renderLoginPrompt() {
+  return '<div style="text-align:center;padding:40px 20px">'
+    + '<h2>请先登录</h2>'
+    + '<p class="step-desc">登录后即可填写信息并提交购买</p>'
+    + '<button class="btn btn-primary" onclick="redirectToLogin()">登录</button>'
+    + '</div>';
+}
+
+// 渲染表单/支付步骤时：
+// var inner = data.userEmail ? renderFormFields(...) : renderLoginPrompt();
+```
+
+### 5.10 支付提交
 
 ```javascript
 async function pay() {
-  var email = document.getElementById('email').value.trim();
+  // 登录兜底：未登录直接跳登录，避免无谓的 checkout 失败
+  var email = productData.userEmail || document.getElementById('email').value.trim();
   if (!email) {
-    document.getElementById('email').focus();
+    redirectToLogin();
     return;
   }
 
@@ -747,7 +789,7 @@ async function pay() {
 }
 ```
 
-### 5.10 步骤指示器（侧边栏）
+### 5.11 步骤指示器（侧边栏）
 
 ```javascript
 function renderStepIndicators(data) {
@@ -801,6 +843,7 @@ function createStepConnector() {
 | `EduReady.stepChange(step, total)` | 当前步, 总步数 | — | 通知步骤变化 |
 | `EduReady.resize(height)` | 像素值 | — | 调整 iframe 高度 |
 | `EduReady.redirectToCheckout(url)` | URL | — | 在顶层窗口跳转 |
+| `EduReady.redirectToLogin()` | — | — | 跳转平台登录页（购买前未登录时调用） |
 | `EduReady.getParam(name)` | 参数名 | `string\|null` | 读取 URL 参数 |
 | `EduReady.getParams()` | — | `object` | 读取所有 URL 参数 |
 | `EduReady.isInIframe` | — | `boolean` | 是否在 iframe 中 |
