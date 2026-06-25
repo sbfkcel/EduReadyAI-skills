@@ -93,6 +93,12 @@
     // 构建购买页 URL（使用 SDK 自动携带 campaign、template、ref 参数）
     var BASE_URL = (location.hostname === '127.0.0.1' || location.hostname === 'localhost') ? 'https://eduready.ai' : '';
 
+    function resolveCoverUrl(url) {
+      if (!url) return BASE_URL + '/cover.jpg';
+      if (/^https?:\/\//.test(url)) return url;
+      return BASE_URL + url;
+    }
+
     function buildBuyUrl(productId) {
       if (devMode) {
         var qs = [];
@@ -123,7 +129,7 @@
     // 货币格式化（活动 API 返回的价格已是元/美元单位，不是分）
     function formatPrice(amount, currency) {
       var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
-      var sym = symbols[currency] || currency;
+      var sym = symbols[currency] || currency || '¥';
       return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
     }
 
@@ -178,9 +184,8 @@
         var buyUrl = buildBuyUrl(p.publicId || p.id);
         var card = document.createElement('div');
         card.className = 'product-card';
-        // coverUrl 可能为空，使用平台默认封面图
-        var imgSrc = p.coverUrl || '/cover.jpg';
-        var imgHtml = '<img src="' + imgSrc + '" alt="' + p.name + '" style="aspect-ratio:16/9;object-fit:cover;width:100%;">';
+        var imgSrc = resolveCoverUrl(p.coverUrl);
+        var imgHtml = '<img src="' + imgSrc + '" alt="' + p.name + '">';
         var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
         var origHtml = (p.basePrice !== p.discountPrice) ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>' : '';
         var btnHtml;

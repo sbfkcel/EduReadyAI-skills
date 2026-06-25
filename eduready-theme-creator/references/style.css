@@ -235,10 +235,7 @@ body {
 
 .buy-card {
   width: 100%;
-  max-width: 800px;
-  display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  max-width: 520px;
 }
 
 .buy-header {
@@ -265,35 +262,25 @@ body {
   margin-left: 8px;
 }
 
-/* Steps (vertical sidebar) */
+/* Steps */
 .steps {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 160px;
-  flex-shrink: 0;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 32px;
 }
 
 .step-indicator {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   font-size: 14px;
   color: #999;
-  padding: 10px 16px;
-  border-radius: 10px;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.step-indicator:hover {
-  background: #f0f1ff;
 }
 
 .step-indicator.active {
   color: #667eea;
   font-weight: 600;
-  background: #f0f1ff;
 }
 
 .step-indicator .dot {
@@ -307,7 +294,6 @@ body {
   font-weight: 600;
   background: #e9ecef;
   color: #999;
-  flex-shrink: 0;
 }
 
 .step-indicator.active .dot {
@@ -321,10 +307,10 @@ body {
 }
 
 .step-connector {
-  width: 2px;
-  height: 16px;
+  width: 32px;
+  height: 2px;
   background: #e9ecef;
-  margin-left: 30px;
+  align-self: center;
 }
 
 /* Form */
@@ -383,69 +369,10 @@ body {
   margin-top: 6px;
 }
 
-/* Step description */
-.step-desc {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 20px;
-}
-
-.form-fields {
-  margin-bottom: 16px;
-}
-
 .form-group .error {
   font-size: 13px;
   color: #e74c3c;
   margin-top: 6px;
-}
-
-.form-group.has-error input,
-.form-group.has-error select,
-.form-group.has-error textarea {
-  border-color: #e74c3c;
-}
-
-.form-group.has-error .checkbox-group {
-  outline: 2px solid #e74c3c;
-  border-radius: 8px;
-  padding: 4px;
-}
-
-.field-error {
-  font-size: 13px;
-  color: #e74c3c;
-  margin-top: 6px;
-}
-
-/* Checkbox group */
-.checkbox-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.checkbox-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.checkbox-item:hover {
-  border-color: #667eea;
-  background: #f8f9ff;
-}
-
-.checkbox-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: #667eea;
 }
 
 /* Coupon */
@@ -635,8 +562,4 @@ body {
   .product-grid { grid-template-columns: 1fr; }
   .buy-page { padding: 24px 16px; }
   .form-card { padding: 24px; }
-  .buy-card { flex-direction: column; gap: 16px; }
-  .steps { flex-direction: row; overflow-x: auto; min-width: 100%; gap: 0; }
-  .step-indicator { padding: 8px 12px; font-size: 12px; white-space: nowrap; }
-  .step-connector { width: 16px; height: 2px; margin-left: 0; align-self: center; }
 }

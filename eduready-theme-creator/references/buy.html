@@ -43,15 +43,26 @@
     // 货币格式化
     function formatPrice(amount, currency) {
       var symbols = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
-      var sym = symbols[currency] || currency;
+      var sym = symbols[currency] || currency || '¥';
       return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function redirectToLogin() {
+      if (window.EduReady && window.EduReady.redirectToLogin) {
+        window.EduReady.redirectToLogin();
+        return;
+      }
+      var returnUrl = window.location.pathname + window.location.search;
+      var loginUrl = BASE_URL + '/login?redirect=' + encodeURIComponent(returnUrl);
+      window.location.href = loginUrl;
     }
 
     // Init
     EduReady.ready(function(data) {
       productData = data;
       window._edureadyData = data;
-      var cur = data.product.currency;
+
+      var cur = data.product.currency || 'USD';
 
       // 保存历史提交数据
       previousSubmissions = data.previousSubmissions || {};
@@ -83,6 +94,27 @@
       // Auto resize
       EduReady.resize(document.body.scrollHeight);
     });
+
+    // 渲染登录提示
+    function renderLoginPrompt() {
+      var container = document.getElementById('step-container');
+      var stepsEl = document.getElementById('steps');
+      if (stepsEl) stepsEl.innerHTML = '';
+      container.innerHTML = '<div class="form-card" style="text-align:center;padding:60px 20px">'
+        + '<h2>请先登录</h2>'
+        + '<p class="step-desc">登录后即可填写信息并提交购买</p>'
+        + '<button class="btn btn-primary" onclick="redirectToLogin()">登录</button>'
+        + '</div>';
+      EduReady.resize(document.body.scrollHeight);
+    }
+
+    function renderStepLoginPromptZSJ() {
+      return '<div style="text-align:center;padding:40px 20px">'
+        + '<h2>请先登录</h2>'
+        + '<p class="step-desc">登录后即可填写信息并提交购买</p>'
+        + '<button class="btn btn-primary" onclick="redirectToLogin()">登录</button>'
+        + '</div>';
+    }
 
     // 渲染步骤指示器
     function renderStepIndicators(data) {
@@ -122,7 +154,7 @@
     function renderAllSteps(data) {
       var container = document.getElementById('step-container');
       container.innerHTML = '';
-      var cur = data.product.currency;
+      var cur = data.product.currency || 'USD';
 
       // Step 1: 产品信息
       var step1 = document.createElement('div');
@@ -163,17 +195,21 @@
         if (item.template.description) {
           html += '<p class="step-desc">' + item.template.description + '</p>';
         }
-        html += '<div class="form-fields">';
+        if (data.userEmail) {
+          html += '<div class="form-fields">';
 
-        (item.template.fields || []).forEach(function(field) {
-          html += renderFormField(field, item.template.id, item.groupId, item.groupSubmitTiming);
-        });
+          (item.template.fields || []).forEach(function(field) {
+            html += renderFormField(field, item.template.id, item.groupId, item.groupSubmitTiming);
+          });
 
-        html += '</div>';
-        html += '<div class="form-nav">';
-        html += '<button class="btn btn-outline" onclick="goStep(' + (stepNum - 1) + ')">上一步</button>';
-        html += '<button class="btn btn-primary" onclick="goStep(' + (stepNum + 1) + ')">下一步</button>';
-        html += '</div>';
+          html += '</div>';
+          html += '<div class="form-nav">';
+          html += '<button class="btn btn-outline" onclick="goStep(' + (stepNum - 1) + ')">上一步</button>';
+          html += '<button class="btn btn-primary" onclick="goStep(' + (stepNum + 1) + ')">下一步</button>';
+          html += '</div>';
+        } else {
+          html += renderStepLoginPromptZSJ();
+        }
         html += '</div>';
 
         step.innerHTML = html;
@@ -184,39 +220,45 @@
       var payStep = document.createElement('div');
       payStep.id = 'step' + totalSteps;
       payStep.className = 'step';
-      payStep.innerHTML = '<div class="form-card">'
-        + '<h2>确认购买</h2>'
-        + '<div class="form-group">'
-        +   '<label>邮箱 <span class="required">*</span></label>'
-        +   '<input type="email" id="email" placeholder="用于接收课程信息和收据">'
-        +   '<div class="hint">支付完成后课程信息将发送到此邮箱</div>'
-        + '</div>'
-        + '<div class="form-group">'
-        +   '<label>优惠券</label>'
-        +   '<div class="coupon-row">'
-        +     '<input type="text" id="coupon" placeholder="输入优惠券码">'
-        +     '<button class="btn-sm" onclick="verifyCoupon()">验证</button>'
-        +   '</div>'
-        +   '<div id="coupon-msg"></div>'
-        + '</div>'
-        + '<div class="summary">'
-        +   '<div class="summary-row"><span>课程原价</span><span id="sum-original">' + formatPrice(data.pricing.originalPrice, cur) + '</span></div>'
-        +   '<div class="summary-row" id="sum-discount-row" style="display:none"><span>优惠减免</span><span id="sum-discount" style="color:#27ae60">--</span></div>'
-        +   '<div class="summary-row total"><span>应付金额</span><span class="value" id="sum-total">' + formatPrice(data.pricing.finalPrice, cur) + '</span></div>'
-        + '</div>'
-        + '<div id="pay-error" class="error-box" style="display:none"></div>'
-        + '<div class="form-nav">'
-        +   '<button class="btn btn-outline" onclick="goStep(' + (totalSteps - 1) + ')">上一步</button>'
-        +   '<button class="btn btn-primary" id="pay-btn" onclick="pay()">立即支付</button>'
-        + '</div>'
-        + '</div>';
+      var payHtml = '<div class="form-card">';
+      payHtml += '<h2>确认购买</h2>';
+      if (data.userEmail) {
+        payHtml += '<div class="form-group">'
+          +   '<label>邮箱 <span class="required">*</span></label>'
+          +   '<input type="email" id="email" value="' + (data.userEmail || '') + '" disabled'
+          +   (data.userEmail ? '' : ' placeholder="请先登录后自动获取邮箱"') + '>'
+          +   '<div class="hint">' + (data.userEmail ? '邮箱来自当前登录账户，将用于接收课程信息和收据' : '请先登录，支付前需要获取您的邮箱地址') + '</div>'
+          + '</div>'
+          + '<div class="form-group">'
+          +   '<label>优惠券</label>'
+          +   '<div class="coupon-row">'
+          +     '<input type="text" id="coupon" placeholder="输入优惠券码">'
+          +     '<button class="btn-sm" onclick="verifyCoupon()">验证</button>'
+          +   '</div>'
+          +   '<div id="coupon-msg"></div>'
+          + '</div>'
+          + '<div class="summary">'
+          +   '<div class="summary-row"><span>课程原价</span><span id="sum-original">' + formatPrice(data.pricing.originalPrice, cur) + '</span></div>'
+          +   '<div class="summary-row" id="sum-discount-row" style="display:none"><span>优惠减免</span><span id="sum-discount" style="color:#27ae60">--</span></div>'
+          +   '<div class="summary-row total"><span>应付金额</span><span class="value" id="sum-total">' + formatPrice(data.pricing.finalPrice, cur) + '</span></div>'
+          + '</div>'
+          + '<div id="pay-error" class="error-box" style="display:none"></div>'
+          + '<div class="form-nav">'
+          +   '<button class="btn btn-outline" onclick="goStep(' + (totalSteps - 1) + ')">上一步</button>'
+          +   '<button class="btn btn-primary" id="pay-btn" onclick="pay()">立即支付</button>'
+          + '</div>';
+      } else {
+        payHtml += renderStepLoginPromptZSJ();
+      }
+      payHtml += '</div>';
+      payStep.innerHTML = payHtml;
       container.appendChild(payStep);
 
       // 预填邮箱（登录用户）
       if (data.userEmail) {
         setTimeout(function() {
           var emailInput = document.getElementById('email');
-          if (emailInput) emailInput.value = data.userEmail;
+          if (emailInput) { emailInput.value = data.userEmail; emailInput.readOnly = true; }
         }, 100);
       }
 
@@ -445,9 +487,10 @@
 
     // 支付
     async function pay() {
-      var email = document.getElementById('email').value.trim();
+      var emailInput = document.getElementById('email');
+      var email = productData.userEmail || (emailInput ? emailInput.value.trim() : '');
       if (!email) {
-        document.getElementById('email').focus();
+        redirectToLogin();
         return;
       }
 
