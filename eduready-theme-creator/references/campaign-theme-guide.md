@@ -107,7 +107,7 @@ SDK 脚本：
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=2"><\/script>');
+    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=3"><\/script>');
   </script>
 
   <script>
@@ -142,6 +142,7 @@ window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
     },
     products: [{
       id: 1,
+      publicId: '38e54a5b-b10b-4b32-9cf6-feb66eb4fce1',
       name: '课程名称',
       description: '课程描述',
       coverUrl: 'https://...',   // 产品封面图，平台存储比例为 16:9；可能为空（未上传时）
@@ -255,7 +256,7 @@ function renderProducts(products, isActive, config) {
   }
 
   products.forEach(function(p) {
-    var buyUrl = buildBuyUrl(p.id);
+    var buyUrl = buildBuyUrl(p.publicId || p.id);
     var card = document.createElement('div');
     card.className = 'product-card';
 
@@ -355,7 +356,7 @@ try {
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=2"><\/script>');
+    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=3"><\/script>');
   </script>
 
   <script>
@@ -387,6 +388,7 @@ EduReady.ready(function(data) {
 ```javascript
 {
   id: 1,
+  publicId: '38e54a5b-b10b-4b32-9cf6-feb66eb4fce1',
   name: '课程名称',
   type: 'course',
   description: '课程描述',
@@ -674,7 +676,7 @@ async function verifyCoupon() {
   var msg = document.getElementById('coupon-msg');
 
   try {
-    var result = await EduReady.verifyCoupon(code, productData.product.id);
+    var result = await EduReady.verifyCoupon(code, productData.product.publicId || productData.product.id);
     couponInfo = result;
     showCouponSuccess(result);
   } catch (e) {

@@ -63,7 +63,7 @@ Read the guide for complete details. Use the example files as templates when cre
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=2"><\/script>');
+    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=3"><\/script>');
   </script>
   <script>
     // Request data from parent page
@@ -97,6 +97,7 @@ Read the guide for complete details. Use the example files as templates when cre
   },
   products: [{
     id: 1,
+    publicId: '38e54a5b-b10b-4b32-9cf6-feb66eb4fce1',
     name: '课程名称',
     description: '课程描述',
     coverUrl: 'https://...',  // 产品封面图，比例 16:9；为空时可使用平台默认图 /cover.jpg
@@ -130,6 +131,7 @@ var refCode = urlParams.get('ref');
 var BASE_URL = (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
   ? 'https://eduready.ai' : '';
 
+// 构建购买链接；productId 优先使用 data.products[i].publicId
 function buildBuyUrl(productId) {
   var qs = [];
   if (campaignSlug) qs.push('campaign=' + campaignSlug);
@@ -175,7 +177,7 @@ function goToBuy(url) {
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=2"><\/script>');
+    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=3"><\/script>');
   </script>
   <script>
     EduReady.ready(function(data) {
@@ -193,7 +195,7 @@ function goToBuy(url) {
 | Method | Returns |
 |--------|---------|
 | `EduReady.ready(cb)` | Initial data callback |
-| `EduReady.verifyCoupon(code, productId)` | `{code, type, value, discountAmount}` |
+| `EduReady.verifyCoupon(code, productPublicId)` | `{code, type, value, discountAmount}` |
 | `EduReady.checkout({email, couponCode?, formSubmissions?})` | `{url, sessionId, orderId}` |
 | `EduReady.stepChange(step, total)` | Notify step change |
 | `EduReady.resize(height)` | Adjust iframe height |

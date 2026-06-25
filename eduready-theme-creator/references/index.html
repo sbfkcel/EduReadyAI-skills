@@ -62,7 +62,7 @@
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=2"><\/script>');
+    ) + '/api/campaign-files/sdk/eduready-campaign.js?v=3"><\/script>');
   </script>
   <script>
     // 从 URL 读取参数
@@ -175,7 +175,7 @@
         return;
       }
       products.forEach(function(p) {
-        var buyUrl = buildBuyUrl(p.id);
+        var buyUrl = buildBuyUrl(p.publicId || p.id);
         var card = document.createElement('div');
         card.className = 'product-card';
         // coverUrl 可能为空，使用平台默认封面图

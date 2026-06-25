@@ -30,7 +30,7 @@
       (location.hostname === '127.0.0.1' || location.hostname === 'localhost')
         ? 'https://eduready.ai'
         : ''
-    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=2"><\/script>');
+    ) + '/api/buy-template-files/sdk/eduready-buy.js?v=3"><\/script>');
   </script>
   <script>
     var productData = null;
@@ -397,7 +397,7 @@
       var msg = document.getElementById('coupon-msg');
 
       try {
-        var result = await EduReady.verifyCoupon(code, productData.product.id);
+        var result = await EduReady.verifyCoupon(code, productData.product.publicId || productData.product.id);
         couponInfo = result;
         showCouponSuccess(result);
       } catch (e) {
