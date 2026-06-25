@@ -42,6 +42,20 @@ Read the guide for complete details. Use the example files as templates when cre
 
 ## Campaign Page (index.html)
 
+> ### ⚠️ 头号铁律：避免活动页卡在"加载中…"
+> 这是活动主题最常见、也最隐蔽的 bug。**用户从购买页点浏览器后退回到活动页，会永远停在"加载中…"。**
+> 它只在**真实用户**身上出现——开发时若开了 DevTools 的 "Disable cache" 会顺带禁用 bfcache，
+> 反而看不到问题，极易误判为"已修好"。务必关掉 Disable cache 用浏览器后退键验证。
+>
+> 两条必须同时满足，缺一即复现：
+> 1. **请求数据要带重试 + bfcache 重发**——不能只 `requestData()` 一次。活动页常从 bfcache 整页冻结恢复，
+>    父页面 effect 不再执行、不主动推数据，且 iframe 常先于父页面初始化；一次性请求一旦丢失就死等。
+>    必须循环重试直到拿到数据，并在 `pageshow`（`e.persisted`）时重新请求。
+> 2. **购买跳转用软导航**——`goToBuy` 必须发 `eduready:campaign:navigate` 让父页面 SPA 内 `router.push`，
+>    **不要** `win.location.href` 顶层硬跳转（硬跳转后再后退，父页面从 bfcache 恢复、effect 不重跑 → 卡死）。
+>
+> 下面 Required Structure 的握手代码即正确范式；`references/index.html` 也是正确范式，照抄即可。
+
 ### Required Structure
 
 ```html

@@ -168,13 +168,27 @@ window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
 
 #### 完整用法
 
+> ⚠️ **必须遵守，否则用户从购买页后退回活动页会永远卡在"加载中…"。**
+> 不能用"一次性 `requestData()`"。原因：用户点购买按钮跳到购买页后再点浏览器后退，
+> 活动页常常**从 bfcache（往返缓存）整页冻结恢复**，此时父页面 React 的 effect 不会重新执行，
+> 不会主动推数据；而 iframe 又常**先于父页面初始化**。若只请求一次，请求就丢了、再也不补发 → 死等。
+> 正确做法：**带重试**（直到拿到数据）+ **`pageshow` 在 bfcache 恢复时重新请求**。
+
 ```javascript
-// 请求数据
-window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*');
+// 向父页面请求数据；父页面监听器可能尚未就绪（首次渲染数据未到，
+// 或后退/bfcache 恢复后 iframe 先于父页面初始化），因此重试直到收到数据。
+var _gotData = false;
+var _reqTries = 0;
+function requestData() {
+  if (_gotData) return;
+  try { window.parent.postMessage({ type: 'eduready:campaign:requestData' }, '*'); } catch (e) {}
+  if (++_reqTries < 40) { setTimeout(requestData, 300); } // 最多约 12s
+}
 
 // 接收数据
 window.addEventListener('message', function(e) {
   if (e.data?.type === 'eduready:campaign:data') {
+    _gotData = true;
     var campaign = e.data.payload.campaign;
     var products = e.data.payload.products;
     var config = e.data.payload.config || {};
@@ -182,6 +196,14 @@ window.addEventListener('message', function(e) {
 
     // 渲染页面...
   }
+});
+
+// 首次请求
+requestData();
+
+// 后退/前进 bfcache 恢复时重新请求（关键，缺了它会卡“加载中…”）
+window.addEventListener('pageshow', function(e) {
+  if (e.persisted && !_gotData) { _reqTries = 0; requestData(); }
 });
 ```
 
@@ -209,8 +231,18 @@ function buildBuyUrl(productId) {
   return BASE_URL + '/buy/' + productId + (qs.length ? '?' + qs.join('&') : '');
 }
 
-// 在顶层窗口跳转（避免在 iframe 中打开）
+// 跳转到购买页：请求父页面在其 SPA 内软导航（router.push），不要顶层窗口硬跳转。
+// ⚠️ 硬跳转（win.location.href）会让浏览器后退时活动页卡在“加载中…”——
+//    顶层整页跳走再后退，父页面从 bfcache 恢复、effect 不再执行、不再推数据。
+//    软导航走父页面 SPA 路由，活动页状态不丢，后退即刻恢复。
 function goToBuy(url) {
+  try {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'eduready:campaign:navigate', url: url }, '*');
+      return;
+    }
+  } catch (e) {}
+  // 兜底：非 iframe 或 postMessage 失败时，顶层窗口硬跳转
   var win = window;
   try {
     while (win !== win.parent) {
