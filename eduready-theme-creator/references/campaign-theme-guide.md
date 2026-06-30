@@ -308,6 +308,17 @@ function renderProducts(products, isActive, config) {
       ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>'
       : '';
 
+    // 返现提示：cashback 类型客户付全款，活动价=原价无划线，需显式提示返现。
+    // 漏掉徽章 → 返现产品看起来和原价产品一样，客户感知不到返现权益（头号返现 bug）。
+    var cashbackHtml = '';
+    if (p.cashbackInfo && p.cashbackInfo.amount != null) {
+      var cbAmt = formatPrice(p.cashbackInfo.amount, p.currency);
+      var cbText = (p.cashbackInfo.triggerType === 'delayed' && p.cashbackInfo.delayDays)
+        ? (p.cashbackInfo.delayDays + ' 天后返现 ' + cbAmt)
+        : ('购买后返现 ' + cbAmt);
+      cashbackHtml = '<div class="cashback-badge">🎁 ' + cbText + '</div>';
+    }
+
     var btnHtml;
     if (p.soldOut) {
       btnHtml = '<button class="btn btn-primary" disabled>已售罄</button>';
@@ -315,9 +326,10 @@ function renderProducts(products, isActive, config) {
       btnHtml = '<a href="javascript:void(0)" onclick="goToBuy(\'' + buyUrl.replace(/'/g, "\\'") + '\')" class="btn btn-primary">'
         + (config.buttonText || '立即抢购') + '</a>';
     } else {
-      btnHtml = '<button class="btn btn-primary" disabled>已结束</button>';
+      btnHtml = '<button class="btn btn-primary" disabled>' + (data.isPaused ? '已暂停' : '已结束') + '</button>';
     }
 
+    // 徽章插在 price-row 与 btn 之间。
     card.innerHTML = imgHtml +
       '<div class="info">' +
         '<div class="name">' + p.name + '</div>' +
@@ -326,6 +338,7 @@ function renderProducts(products, isActive, config) {
           '<span class="price-current">' + priceHtml + '</span>' +
           origHtml +
         '</div>' +
+        cashbackHtml +
         btnHtml +
       '</div>';
 
@@ -333,6 +346,71 @@ function renderProducts(products, isActive, config) {
   });
 }
 ```
+
+> **三件事必须同时处理**（任一遗漏都是 bug）：
+> 1. 价格 = `discountPrice || basePrice`，划线原价仅当 `basePrice !== discountPrice` 时显示。
+> 2. 返现是「付全款后返」型折扣——返现产品 `discountPrice === basePrice`，**没有划线**，所以**必须**靠 `cashback-badge` 显式提示，否则和原价产品无差别。
+> 3. 卡片必须用 **flex 列布局**让按钮底部对齐（见 §4.5.1），否则描述/徽章高度不一时按钮错位。
+
+**返现文案规则**（统一前缀 `🎁 `）：
+
+| 触发时机 `triggerType` | 文案 |
+|---|---|
+| `on_pay` / `on_confirm` | `购买后返现 {amount}` |
+| `delayed`（`delayDays` 有值） | `{delayDays} 天后返现 {amount}` |
+
+#### 4.5.1 返现数据结构
+
+返现产品在 `products[]` 上多一个 `cashbackInfo` 字段（其他折扣类型无此字段）。对应后端 `campaign_products.discount_type = 'cashback'`，平台按以下规则计算 `amount`：
+
+- `discount_value ≤ 1` → 按比例：`amount = basePrice × discount_value`（如 `0.1` = 返 10%）
+- `discount_value > 1` → 固定金额：`amount = discount_value`
+
+```javascript
+p.cashbackInfo = {
+  amount: 999,                 // 返现金额，同 p.currency
+  triggerType: 'on_confirm',   // 'on_pay' | 'on_confirm' | 'delayed'
+  delayDays: 7                 // 仅 delayed 有意义，触发后多少天返
+}
+```
+
+> 购买页对应字段在 `data.pricing.cashbackInfo`（结构相同），在 Step 1 价格块下方渲染 `.cashback-hint`，详见 §5.3 与 `references/buy.html`。
+
+#### 4.5.2 卡片按钮底部对齐（必查）
+
+活动页产品卡的「立即抢购」按钮**底部必须对齐**。卡片内容高度不一（描述几行、有无返现徽章）时，按钮错位是最显眼的视觉 bug。
+
+唯一正确做法是**整条 flex 列布局**，绝不用固定高度去凑：
+
+```css
+.product-card {
+  display: flex;          /* 卡片本身 */
+  flex-direction: column;
+}
+.product-card .info {
+  flex: 1;                /* 信息区吃满剩余高度 */
+  display: flex;
+  flex-direction: column;
+}
+.product-card .price-row {
+  margin-top: auto;       /* 把价格行(+徽章+按钮)整体下压到底 */
+}
+```
+
+这样 `name`+`desc` 贴顶，`price-row`+`cashback-badge`+按钮贴底，所有卡片按钮底边齐平。
+
+**徽章与按钮之间要留间距**（常见投诉：返现提示紧贴按钮）。徽章紧挨在按钮正上方，所以必须给真实的 `margin-bottom`，不能只有 `margin-top`：
+
+```css
+.cashback-badge {
+  margin-top: 8px;
+  margin-bottom: 24px;    /* 与下方按钮拉开，别贴着 */
+  padding: 5px 11px;
+  /* ... 圆角/背景/字号见 references/style.css */
+}
+```
+
+完整卡片 CSS 范式见 `references/style.css`（`.product-card` / `.product-card .info` / `.price-row` / `.cashback-badge` / `.cashback-hint`），照抄即可。
 
 ### 4.6 货币格式化
 
@@ -464,13 +542,19 @@ EduReady.ready(function(data) {
   originalPrice: 9999,         // 原价
   finalPrice: 7999,            // 最终价格（含活动折扣）
   discountAmount: 2000,        // 折扣金额
-  cashbackInfo: {              // 返现信息（如果有）
-    triggerType: 'manual',
-    delayDays: 0,
-    amount: 500
+  cashbackInfo: {              // 返现信息，仅 cashback 类型产品才有；其他类型为 null
+    amount: 500,               // 返现金额，同 product.currency
+    triggerType: 'on_confirm', // 'on_pay' | 'on_confirm' | 'delayed'
+    delayDays: 7               // 仅 delayed 有意义；其他类型为 null
   }
 }
 ```
+
+> **返现产品**：`finalPrice === originalPrice`（客户付全款），`discountAmount === 0`，所以价格区**不显示划线**。必须在 Step 1 价格块下方渲染 `.cashback-hint` 提示返现，否则客户看不到返现权益。文案规则同活动页（见 §4.5）：
+> - `on_pay` / `on_confirm` → `购买后返现 {amount}`
+> - `delayed`（`delayDays` 有值） → `{delayDays} 天后返现 {amount}`
+>
+> 范式见 `references/buy.html` 的 `renderStep1_Product`。
 
 #### formGroups（表单组）
 

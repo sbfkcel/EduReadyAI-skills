@@ -208,6 +208,15 @@
         var imgHtml = '<img src="' + imgSrc + '" alt="' + p.name + '">';
         var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
         var origHtml = (p.basePrice !== p.discountPrice) ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>' : '';
+        // 返现提示：cashback 类型客户付全款，活动价=原价无划线，需显式提示返现
+        var cashbackHtml = '';
+        if (p.cashbackInfo && p.cashbackInfo.amount != null) {
+          var cbAmt = formatPrice(p.cashbackInfo.amount, p.currency);
+          var cbText = (p.cashbackInfo.triggerType === 'delayed' && p.cashbackInfo.delayDays)
+            ? (p.cashbackInfo.delayDays + ' 天后返现 ' + cbAmt)
+            : ('购买后返现 ' + cbAmt);
+          cashbackHtml = '<div class="cashback-badge">🎁 ' + cbText + '</div>';
+        }
         var btnHtml;
         if (p.soldOut) {
           btnHtml = '<button class="btn btn-primary" disabled>已售罄</button>';
@@ -225,6 +234,7 @@
               '<span class="price-current">' + priceHtml + '</span>' +
               origHtml +
             '</div>' +
+            cashbackHtml +
             btnHtml +
           '</div>';
         grid.appendChild(card);

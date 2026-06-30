@@ -134,7 +134,12 @@ Read the guide for complete details. Use the example files as templates when cre
     basePrice: 9999,
     discountPrice: 7999,
     currency: 'CNY',  // 平台系统配置的默认货币
-    soldOut: false
+    soldOut: false,
+    cashbackInfo: {            // 返现信息，仅 cashback 类型产品才有；其他类型无此字段
+      amount: 999,             // 返现金额（同币种）
+      triggerType: 'on_confirm', // 'on_pay' | 'on_confirm' | 'delayed'
+      delayDays: 7             // 仅 delayed 有意义；触发后多少天返
+    }
   }],
   config: {
     title: '页面标题',
@@ -185,6 +190,72 @@ function goToBuy(url) {
   win.location.href = url;
 }
 ```
+
+### Price & Cashback Rendering (活动页产品卡)
+
+Every campaign product carries `basePrice`, `discountPrice`, `currency`, and **optionally** `cashbackInfo`. Three things must be handled together in each product card — get any one wrong and the card reads as a bug to the customer:
+
+1. **Price = `discountPrice || basePrice`**, with a struck-through original only when `basePrice !== discountPrice`. The campaign API already computes the discounted price per discount type; just render it.
+2. **Cashback is a *full-price* discount** — the customer pays `discountPrice` (which for cashback equals `basePrice`, so there's **no strikethrough**), then gets money back later. Because there's no visible discount, you **must show a cashback badge** or the customer sees a normal-price product with no hint of the rebate. This is the #1 cashback bug: forgetting the badge, so a cashback product looks identical to a non-discounted one.
+3. **Three trigger types** → three badge texts (all prefixed `🎁 `):
+   - `on_pay` / `on_confirm` → `购买后返现 {amount}`
+   - `delayed` (only when `delayDays` is set) → `{delayDays} 天后返现 {amount}`
+
+```javascript
+var priceHtml = formatPrice(p.discountPrice || p.basePrice, p.currency);
+var origHtml = (p.basePrice !== p.discountPrice)
+  ? '<span class="price-original">' + formatPrice(p.basePrice, p.currency) + '</span>'
+  : '';
+
+// 返现提示：cashback 类型客户付全款，活动价=原价无划线，需显式提示返现
+var cashbackHtml = '';
+if (p.cashbackInfo && p.cashbackInfo.amount != null) {
+  var cbAmt = formatPrice(p.cashbackInfo.amount, p.currency);
+  var cbText = (p.cashbackInfo.triggerType === 'delayed' && p.cashbackInfo.delayDays)
+    ? (p.cashbackInfo.delayDays + ' 天后返现 ' + cbAmt)
+    : ('购买后返现 ' + cbAmt);
+  cashbackHtml = '<div class="cashback-badge">🎁 ' + cbText + '</div>';
+}
+```
+
+Place the badge **between** the price row and the buy button (`cashbackHtml` then `btnHtml`). On the **buy page** (`buy.html`), the equivalent lives in `data.pricing.cashbackInfo` — render a `.cashback-hint` after the price block in Step 1 (see `references/buy.html`).
+
+> The `references/index.html` and `references/style.css` already implement this end-to-end (`cashback-badge` + `.cashback-hint` CSS, flex-aligned cards). Copy that card block verbatim — don't re-derive it.
+
+### Card Button Bottom-Alignment (卡片按钮底部对齐)
+
+> 铁律：活动页产品卡的「立即抢购」按钮**底部必须对齐**。卡片内容高度不一（描述几行、有无返现徽章）时，按钮错位是最显眼的视觉 bug，却最容易被忽略。
+
+The only correct pattern is **flex column all the way down**. A normal block-flow card leaves the button wherever the content ends — so a card with a 1-line description and a card with a 3-line description put their buttons at different heights. Fix it structurally, never with fixed heights:
+
+```css
+.product-card {
+  display: flex;          /* 卡片本身 */
+  flex-direction: column;
+}
+.product-card .info {
+  flex: 1;                /* 信息区吃满剩余高度 */
+  display: flex;
+  flex-direction: column;
+}
+.product-card .price-row {
+  margin-top: auto;       /* 把价格行(+徽章+按钮)整体下压到底 */
+}
+```
+
+This makes `name` + `desc` stick to the top and `price-row` + `cashback-badge` + button stick to the bottom — aligned across every card regardless of content height.
+
+**Then give the cashback badge breathing room above the button** (the second most common complaint: badge glued to the button). The badge sits directly before the button, so it needs a real `margin-bottom`, not just `margin-top`:
+
+```css
+.cashback-badge {
+  margin-top: 8px;
+  margin-bottom: 24px;   /* 与下方按钮拉开，别贴着 */
+  /* ...padding/background as in references/style.css */
+}
+```
+
+The full canonical card CSS is in `references/style.css` (`.product-card` / `.product-card .info` / `.price-row` / `.cashback-badge`). Match it; do not invent a parallel layout.
 
 ### Cover Image Handling
 
@@ -396,5 +467,10 @@ When asked to create a theme:
 4. **Generate index.html**: Hero section with countdown, product grid, buy buttons
 5. **Generate buy.html**: Step wizard, form rendering, coupon input, payment integration
 6. **Ensure all SDK integration works**: postMessage, EduReady.ready, checkout flow
+7. **Verify the cashback + alignment checklist** (the two bugs we keep regressing on):
+   - [ ] Cashback products show a `🎁 购买后返现 X` / `N 天后返现 X` badge (on the campaign card **and** the buy page Step 1) — a cashback product with no badge looks like a normal full-price product.
+   - [ ] Product card buttons align at the bottom: `.product-card` is `flex column`, `.info` is `flex:1` column, `.price-row` has `margin-top:auto`.
+   - [ ] `.cashback-badge` has `margin-bottom: 24px` so it doesn't hug the button below it.
+   - [ ] Price uses `discountPrice || basePrice`; strikethrough only when `basePrice !== discountPrice` (cashback → no strikethrough).
 
 Use `references/index.html`, `references/buy.html`, and `references/style.css` as templates.
