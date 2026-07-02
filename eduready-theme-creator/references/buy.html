@@ -47,6 +47,67 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // ============ 表单联动（showWhen 条件显示） ============
+    var SHOW_WHEN_OPERATORS = {
+      equals:     function(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); },
+      not_equals: function(a, b) { return String(a == null ? '' : a) !== String(b == null ? '' : b); },
+      contains:   function(a, b) { return String(a == null ? '' : a).indexOf(String(b == null ? '' : b)) >= 0; },
+      in:         function(a, b) { return Array.isArray(b) && b.indexOf(a) >= 0; },
+      gt:         function(a, b) { return Number(a) > Number(b); },
+      gte:        function(a, b) { return Number(a) >= Number(b); },
+      lt:         function(a, b) { return Number(a) < Number(b); },
+      lte:        function(a, b) { return Number(a) <= Number(b); },
+      empty:      function(a)    { return a === undefined || a === null || a === '' || (Array.isArray(a) && a.length === 0); },
+      not_empty:  function(a)    { return a !== undefined && a !== null && a !== '' && !(Array.isArray(a) && a.length === 0); },
+    };
+
+    function evaluateShowWhen(showWhen, formValues) {
+      if (typeof showWhen === 'string') {
+        try { showWhen = JSON.parse(showWhen); } catch (e) { return true; }
+      }
+      if (!showWhen || !showWhen.conditions || showWhen.conditions.length === 0) return true;
+      var logic = showWhen.logic || 'and';
+      var results = showWhen.conditions.map(function(c) {
+        if (!c || !c.fieldKey) return false;
+        var fn = SHOW_WHEN_OPERATORS[c.operator];
+        if (!fn) return true;
+        return fn(formValues[c.fieldKey], c.value);
+      });
+      if (logic === 'or') return results.some(function(r) { return r; });
+      return results.every(function(r) { return r; });
+    }
+
+    function getFieldValue(fieldEl) {
+      if (!fieldEl) return '';
+      if (fieldEl.classList.contains('checkbox-group')) {
+        var checked = [];
+        fieldEl.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+        return checked;
+      }
+      return fieldEl.value ? fieldEl.value.trim() : '';
+    }
+
+    function collectCurrentFormValues() {
+      var values = {};
+      document.querySelectorAll('[data-fk]').forEach(function(el) {
+        var group = el.closest('.form-group');
+        if (group && group.dataset.showWhen !== undefined && group.style.display === 'none') return;
+        values[el.dataset.fk] = getFieldValue(el);
+      });
+      return values;
+    }
+
+    function refreshConditionalFields() {
+      var formValues = collectCurrentFormValues();
+      document.querySelectorAll('.form-group[data-show-when]').forEach(function(group) {
+        var raw = group.getAttribute('data-show-when');
+        if (!raw) { group.style.display = ''; return; }
+        var showWhen;
+        try { showWhen = JSON.parse(raw); } catch (e) { group.style.display = ''; return; }
+        group.style.display = evaluateShowWhen(showWhen, formValues) ? '' : 'none';
+      });
+    }
+
     function resolveImageUrl(url) {
       if (!url) return BASE_URL + '/cover.jpg';
       if (/^https?:\/\//i.test(url)) return url;
@@ -88,6 +149,16 @@
 
       render();
       goStep(1);
+
+      // 表单联动：在步骤容器上做事件委托，任一字段输入/变化后重新评估条件字段显隐
+      var stepContainer = document.getElementById('step-container');
+      if (stepContainer && !stepContainer._edureadyLinkageBound) {
+        stepContainer._edureadyLinkageBound = true;
+        stepContainer.addEventListener('input', refreshConditionalFields);
+        stepContainer.addEventListener('change', refreshConditionalFields);
+      }
+      refreshConditionalFields();
+
       EduReady.resize(document.body.scrollHeight);
     });
 
@@ -288,7 +359,12 @@
 
     function renderField(field, tplId, groupId, timing) {
       var ft = field.fieldType || 'text';
-      var html = '<div class="form-group">';
+      var showWhenAttr = '';
+      if (field.showWhen) {
+        showWhenAttr = ' data-show-when="' + esc(JSON.stringify(field.showWhen)) + '"'
+          + ' data-field-key="' + esc(field.fieldKey) + '"';
+      }
+      var html = '<div class="form-group"' + showWhenAttr + '>';
       html += '<label>' + esc(field.label);
       if (field.isRequired) html += ' <span class="required">*</span>';
       html += '</label>';
@@ -468,6 +544,9 @@
       var valid = true;
       stepEl.querySelectorAll('[data-fk]').forEach(function(el) {
         if (el.dataset.required !== 'true') return;
+        // 被联动条件隐藏的字段不参与必填校验
+        var grp = el.closest('.form-group');
+        if (grp && grp.dataset.showWhen !== undefined && grp.style.display === 'none') return;
         var val;
         if (el.classList.contains('checkbox-group')) {
           val = el.querySelectorAll('input[type="checkbox"]:checked').length > 0 ? 'ok' : '';
@@ -559,6 +638,9 @@
       document.querySelectorAll('[data-fk]').forEach(function(el) {
         var key = el.dataset.gid + '_' + el.dataset.tid;
         if (!grouped[key]) grouped[key] = { productFormGroupId: parseInt(el.dataset.gid), templateId: parseInt(el.dataset.tid), submitTiming: el.dataset.timing, data: {} };
+        // 被联动条件隐藏的字段不提交其值
+        var grp = el.closest('.form-group');
+        if (grp && grp.dataset.showWhen !== undefined && grp.style.display === 'none') return;
         var value;
         if (el.classList.contains('checkbox-group')) {
           var checked = [];

@@ -683,6 +683,157 @@ function renderFormField(field, templateId, groupId, submitTiming) {
 }
 ```
 
+### 5.4.1 表单联动（showWhen 条件显示）
+
+字段可声明 `showWhen`，**仅当条件成立时才显示**，否则隐藏。条件引用的是**同一模板内**其它字段的 `fieldKey`（跨模板不生效）。这是平台表单的既有能力（见 `Client/lib/evaluate-condition.js`），购买页模板必须在前端实现等价的求值逻辑，使交互与平台原生表单一致。
+
+#### 条件结构
+
+```javascript
+showWhen: {
+  logic: 'and',        // 'and' | 'or'，默认 'and'
+  conditions: [
+    { fieldKey: 'need_invoice', operator: 'equals', value: 'yes' }
+  ]
+}
+// showWhen: null 或省略 = 始终显示
+```
+
+| operator | 含义 | 备注 |
+|----------|------|------|
+| `equals` / `not_equals` | 等于 / 不等于 | 按字符串比较（`String(a)===String(b)`），`null/undefined` 归一为 `''` |
+| `contains` | 包含子串 | `String(a).includes(String(b))` |
+| `in` | 属于候选集合 | `value` 须为数组，`b.includes(a)` |
+| `gt` / `gte` / `lt` / `lte` | 数值大小比较 | `Number(a) > Number(b)` 等 |
+| `empty` / `not_empty` | 空 / 非空 | 一元，`value` 忽略；数组以 length 判空 |
+
+> `multiselect` 字段在条件求值时，其值是选中项数组（`['v1','v2']`），故 `equals`/`contains` 会与数组字符串化结果比较——若要判断「是否包含某项」，配合 `in` 运算符更稳妥。
+
+#### 实现（四个环节，缺一不可）
+
+下面是参考实现，与 `references/buy.html` 一致（命名因模板而异：参考模板用 `data-fk`/`esc`/`renderField`；本节上面 §5.4 的示例用 `data-field-key`/`renderFormField`——逻辑完全相同，按你模板已有的命名套用即可）。
+
+**① 求值工具**（纯 vanilla，无外部依赖）：
+
+```javascript
+var SHOW_WHEN_OPERATORS = {
+  equals:     function(a, b) { return String(a == null ? '' : a) === String(b == null ? '' : b); },
+  not_equals: function(a, b) { return String(a == null ? '' : a) !== String(b == null ? '' : b); },
+  contains:   function(a, b) { return String(a == null ? '' : a).indexOf(String(b == null ? '' : b)) >= 0; },
+  in:         function(a, b) { return Array.isArray(b) && b.indexOf(a) >= 0; },
+  gt:         function(a, b) { return Number(a) > Number(b); },
+  gte:        function(a, b) { return Number(a) >= Number(b); },
+  lt:         function(a, b) { return Number(a) < Number(b); },
+  lte:        function(a, b) { return Number(a) <= Number(b); },
+  empty:      function(a)    { return a === undefined || a === null || a === '' || (Array.isArray(a) && a.length === 0); },
+  not_empty:  function(a)    { return a !== undefined && a !== null && a !== '' && !(Array.isArray(a) && a.length === 0); },
+};
+
+function evaluateShowWhen(showWhen, formValues) {
+  if (typeof showWhen === 'string') {              // 兼容序列化成字符串
+    try { showWhen = JSON.parse(showWhen); } catch (e) { return true; }
+  }
+  if (!showWhen || !showWhen.conditions || showWhen.conditions.length === 0) return true;
+  var logic = showWhen.logic || 'and';
+  var results = showWhen.conditions.map(function(c) {
+    if (!c || !c.fieldKey) return false;            // 引用字段为空，按不满足处理
+    var fn = SHOW_WHEN_OPERATORS[c.operator];
+    if (!fn) return true;                           // 未知 operator，默认满足
+    return fn(formValues[c.fieldKey], c.value);
+  });
+  if (logic === 'or') return results.some(function(r) { return r; });
+  return results.every(function(r) { return r; });
+}
+
+function getFieldValue(fieldEl) {
+  if (!fieldEl) return '';
+  if (fieldEl.classList.contains('checkbox-group')) {
+    var checked = [];
+    fieldEl.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) { checked.push(cb.value); });
+    return checked;                                 // multiselect 返回数组
+  }
+  return fieldEl.value ? fieldEl.value.trim() : '';
+}
+
+// 收集当前所有「可见」字段的值；隐藏字段的值不参与条件判断（避免误判）
+function collectCurrentFormValues() {
+  var values = {};
+  document.querySelectorAll('[data-field-key]').forEach(function(el) {
+    var group = el.closest('.form-group');
+    if (group && group.dataset.showWhen !== undefined && group.style.display === 'none') return;
+    values[el.dataset.fieldKey] = getFieldValue(el);
+  });
+  return values;
+}
+
+function refreshConditionalFields() {
+  var formValues = collectCurrentFormValues();
+  document.querySelectorAll('.form-group[data-show-when]').forEach(function(group) {
+    var raw = group.getAttribute('data-show-when');
+    if (!raw) { group.style.display = ''; return; }
+    var showWhen;
+    try { showWhen = JSON.parse(raw); } catch (e) { group.style.display = ''; return; }
+    group.style.display = evaluateShowWhen(showWhen, formValues) ? '' : 'none';
+  });
+}
+```
+
+**② 渲染时把条件序列化到容器上**（在 `renderFormField`/`renderField` 开头）：
+
+```javascript
+var showWhenAttr = '';
+if (field.showWhen) {
+  // JSON 必须 HTML-属性转义（& 和 "），否则会截断属性
+  showWhenAttr = ' data-show-when="' + esc(JSON.stringify(field.showWhen)) + '"'
+    + ' data-field-key="' + esc(field.fieldKey) + '"';
+}
+var html = '<div class="form-group"' + showWhenAttr + '>';
+```
+
+**③ 事件委托 + 初始刷新**（在 `EduReady.ready` 回调末尾，`goStep(1)` 之后）：
+
+```javascript
+// 在步骤容器上做一次性事件委托，任一字段输入/变化即重新评估联动显隐
+var stepContainer = document.getElementById('step-container');
+if (stepContainer && !stepContainer._edureadyLinkageBound) {
+  stepContainer._edureadyLinkageBound = true;
+  stepContainer.addEventListener('input', refreshConditionalFields);
+  stepContainer.addEventListener('change', refreshConditionalFields);
+}
+refreshConditionalFields();   // 按历史已填值定初值
+```
+
+**④ 验证与收集时跳过隐藏字段**：
+
+```javascript
+// validateStep 中：被联动隐藏的字段不参与必填校验
+fields.forEach(function(el) {
+  if (el.dataset.required !== 'true') return;
+  var grp = el.closest('.form-group');
+  if (grp && grp.dataset.showWhen !== undefined && grp.style.display === 'none') return;  // ← 关键
+  // ... 原有校验逻辑
+});
+
+// collectFormSubmissions 中：被联动隐藏的字段不提交其值
+document.querySelectorAll('[data-field-key]').forEach(function(el) {
+  // ... 建 grouped[key]
+  var grp = el.closest('.form-group');
+  if (grp && grp.dataset.showWhen !== undefined && grp.style.display === 'none') return;  // ← 关键
+  // ... 原有取值逻辑
+});
+```
+
+#### 常见 bug
+
+| 症状 | 原因 |
+|------|------|
+| 联动字段始终显示 / 始终不显示 | `data-show-when` 的 JSON 未做属性转义，`"` 截断了属性值；或 `evaluateShowWhen` 没兼容字符串形式 |
+| 隐藏字段挡住「下一步」 | `validateStep` 没跳过隐藏字段，必填校验仍触发 |
+| 提交了用户没填的隐藏字段旧值 | `collectFormSubmissions` 没跳过隐藏字段，把残留 value 提交了 |
+| 联动条件依赖一个本身也受联动的字段 | 链式联动正常工作，但 `collectCurrentFormValues` 已过滤隐藏字段——上游字段一旦隐藏，下游条件取不到它的值，按 `empty` 求值。这通常符合预期（上游不显示则下游也不应触发） |
+
+> 服务端 `Server/api/checkout/submit-form.post.js` 同样会用 `evaluateShowWhen` 丢弃隐藏字段的值，前端跳过是**为了交互正确**（不挡步、不提交脏值），两端口径一致。
+
 ### 5.5 表单验证
 
 ```javascript

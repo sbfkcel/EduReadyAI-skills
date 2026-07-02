@@ -388,6 +388,21 @@ Every form element must include these attributes for data collection:
 'data-submit-timing="' + submitTiming + '"'  // 'pre_pay' | 'post_pay'
 ```
 
+### Form Conditional Linkage (showWhen / 表单联动)
+
+A field may declare a `showWhen` condition — it should only be **visible** when the condition holds, and otherwise be **hidden**. Conditions reference other fields **within the same template** by `fieldKey`. This is platform-defined (see `Client/lib/evaluate-condition.js`); the buy template must implement the same evaluation client-side so the UX matches the platform form renderer.
+
+Structure: `{ logic: 'and'|'or', conditions: [{ fieldKey, operator, value }] }` (`showWhen: null` = always visible). Operators: `equals`, `not_equals`, `contains`, `in`, `gt`, `gte`, `lt`, `lte`, `empty`, `not_empty`.
+
+A buy theme that renders forms **must** implement these four pieces (full reference code in `references/buy.html` and `references/campaign-theme-guide.md` §5.4.1):
+
+1. **Render** — when `field.showWhen` is set, serialize it onto the `.form-group` container as `data-show-when="<escaped JSON>"` (and `data-field-key`), so the container can be found and re-evaluated later. JSON must be HTML-attribute-escaped (`&` → `&amp;`, `"` → `&quot;`) to avoid breaking the attribute.
+2. **Re-evaluate on input** — bind a **delegated** `input` + `change` listener once on the step container (`#step-container`); on any field change, re-evaluate every `[data-show-when]` container's visibility from the current form values. Also call it once after initial render so pre-filled values set the correct initial state.
+3. **Validate** — in `validateStep`, **skip required-validation for fields whose `data-show-when` container is currently hidden** (`style.display === 'none'`). Hidden fields must never block step navigation.
+4. **Collect** — in `collectFormSubmissions`, **skip hidden fields** so their (stale) values are not submitted. Hidden fields contribute no data.
+
+> **Common bug:** skipping either the validate-skip or the collect-skip. A field hidden by linkage that still fails required-validation blocks the user from proceeding, and submitting a hidden field's leftover value pollutes the submission. Both must be skipped. The platform server (`submit-form.post.js`) re-evaluates `show_when` and drops hidden-field values too, but the template must do the same client-side for correct UX.
+
 ### Login Gating
 
 The buy flow requires the user to be logged in before filling forms or paying. Follow these rules:
